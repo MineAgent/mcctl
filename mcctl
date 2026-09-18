@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# mcctl - drive the Minecraft client from the command line.
+#
+#   ./mcctl W 100                     hold W for 100 ms
+#   ./mcctl W+Ctrl 100                hold W and Ctrl for 100 ms
+#   ./mcctl mouse left                left click
+#   ./mcctl mouse move +30 -80        move the mouse 30 px right / 80 px up
+#   ./mcctl delay 80 W 50             wait 80 ms, then hold W for 50 ms
+#   ./mcctl help                      full manual (GET /)
+#   ./mcctl prtsc [shot.png]          screenshot the game into a file (GET /prtsc)
+#   ./mcctl -f script.txt             run every line of a file, one request per line
+#   ./mcctl -r 'W 100;mouse left'     raw body (semicolon separated, one request)
+#
+# Environment:
+#   MCCTL_URL   default http://127.0.0.1:3420
+set -euo pipefail
+
+URL="${MCCTL_URL:-http://127.0.0.1:3420}"
+
+usage() {
+	sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+	exit "${1:-0}"
+}
+
+if [ $# -eq 0 ]; then
+	usage 1
+fi
+
+case "$1" in
+	-h | --help | help)
+		if [ "$1" = "help" ]; then
+			exec curl -sS "$URL"
+		fi
+		usage 0
+		;;
+	prtsc | screenshot | -s)
+		shift
+		out="${1:-mcctl-$(date +%Y%m%d-%H%M%S).png}"
+		code=$(curl -sS -o "$out" -w '%{http_code}' "$URL/prtsc") || {
+			echo "mcctl: 无法连接 $URL" >&2
+			exit 3
+		}
+		if [ "$code" = "200" ]; then
+			echo "已保存截图: $out ($(wc -c < "$out") 字节)"
+		else
+			echo "截图失败 (HTTP $code):" >&2
+			cat "$out" >&2
+			rm -f "$out"
+			exit 1
+		fi
+		;;
+	-f | --file)
+		shift
+		[ $# -ge 1 ] || { echo "mcctl: -f needs a file" >&2; exit 2; }
+		file="$1"
+		[ -f "$file" ] || { echo "mcctl: no such file: $file" >&2; exit 2; }
+		# one request per non-empty line, so each line is executed in order
+		while IFS= read -r line || [ -n "$line" ]; do
+			[ -z "${line//[[:space:]]/}" ] && continue
+			case "$line" in \#*) continue ;; esac
+			printf '%s -> ' "$line"
+			curl -sS -X POST --data-binary "$line" "$URL"
+		done < "$file"
+		;;
+	-r | --raw)
+		shift
+		[ $# -ge 1 ] || { echo "mcctl: -r needs a body" >&2; exit 2; }
+		curl -sS -X POST --data-binary "$*" "$URL"
+		;;
+	*)
+		curl -sS -X POST --data-binary "$*" "$URL"
+		;;
+esac

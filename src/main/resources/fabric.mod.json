@@ -1,0 +1,26 @@
+{
+	"schemaVersion": 1,
+	"id": "mcctl",
+	"version": "${version}",
+	"name": "mcctl - Client Connect",
+	"description": "HTTP control server bound to 127.0.0.1:3420 that drives the Minecraft client (keyboard, mouse, camera) from the command line. GET returns the full manual, POST executes commands.",
+	"authors": [
+		"MineAgent"
+	],
+	"license": "LGPL-3.0-only",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"com.example.mcctl.McCtlClientMod"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.2",
+		"java": ">=25"
+	},
+	"contact": {
+		"homepage": "https://github.com/MineAgent/mcctl",
+		"sources": "https://github.com/MineAgent/mcctl"
+	}
+}
