@@ -82,6 +82,16 @@ public final class ControlServer {
 				return;
 			}
 
+			if (isInfoPath(path)) {
+				if (!"GET".equals(method) && !"HEAD".equals(method) && !"POST".equals(method)) {
+					exchange.getResponseHeaders().set("Allow", "GET, HEAD, POST, OPTIONS");
+					respond(exchange, 405, "text/plain; charset=utf-8", "method not allowed: " + method + "\n");
+					return;
+				}
+				handleInfo(exchange);
+				return;
+			}
+
 			switch (method) {
 				case "GET", "HEAD" -> respond(exchange, 200, "text/plain; charset=utf-8", Help.text());
 				case "POST" -> handlePost(exchange);
@@ -108,6 +118,35 @@ public final class ControlServer {
 	private static boolean isScreenshotPath(String path) {
 		return "/prtsc".equals(path) || "/prtsc.png".equals(path)
 				|| "/screenshot".equals(path) || "/screenshot.png".equals(path);
+	}
+
+	private static boolean isInfoPath(String path) {
+		return "/info".equals(path) || "/info.txt".equals(path) || "/player".equals(path);
+	}
+
+	/** {@code GET /info}: player position, facing and inventory as plain text. */
+	private void handleInfo(HttpExchange exchange) throws IOException {
+		if (!executor.isReady()) {
+			respond(exchange, 409, "text/plain; charset=utf-8",
+					"game not ready: " + executor.unavailableReason() + "\n");
+			return;
+		}
+
+		String info;
+		try {
+			info = executor.playerInfo();
+		} catch (RuntimeException e) {
+			LOG.log(Level.WARNING, "player info failed", e);
+			respond(exchange, 500, "text/plain; charset=utf-8", "player info failed: " + e + "\n");
+			return;
+		}
+
+		if (info == null) {
+			respond(exchange, 409, "text/plain; charset=utf-8", "no world loaded (still on a menu?)\n");
+			return;
+		}
+
+		respond(exchange, 200, "text/plain; charset=utf-8", info);
 	}
 
 	/** {@code GET /prtsc}: capture the current frame and hand it back as a PNG. */

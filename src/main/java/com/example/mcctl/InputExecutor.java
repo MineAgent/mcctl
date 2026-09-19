@@ -43,6 +43,34 @@ public interface InputExecutor {
 	 */
 	byte[] captureScreenshot() throws Exception;
 
+	/**
+	 * Player snapshot as plain technical text, one field per line and
+	 * {@code <namespace:id> <count>} lines inside the item sections.
+	 *
+	 * <pre>
+	 * 玩家：DSH
+	 * 维度：minecraft:overworld
+	 * 坐标：-219.53 105.00 112.31
+	 * 方块：-220 105 112
+	 * 方位：north
+	 * yaw：-135.2
+	 * pitch：12.4
+	 * 选中：1
+	 * 背包：
+	 * minecraft:stone 64
+	 * 副手：
+	 * minecraft:torch 3
+	 * 盔甲：
+	 * minecraft:diamond_helmet 1
+	 * </pre>
+	 *
+	 * <p>The {@code 副手：} and {@code 盔甲：} sections are only present when those slots hold
+	 * something; an empty armor slot is skipped.</p>
+	 *
+	 * @return the body, or {@code null} when no world/player is loaded
+	 */
+	String playerInfo();
+
 	/** @return true when the game window is up and input can be delivered (also at menus) */
 	boolean isReady();
 

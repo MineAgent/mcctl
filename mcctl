@@ -8,6 +8,7 @@
 #   ./mcctl delay 80 W 50             wait 80 ms, then hold W for 50 ms
 #   ./mcctl help                      full manual (GET /)
 #   ./mcctl prtsc [shot.png]          screenshot the game into a file (GET /prtsc)
+#   ./mcctl info                      player position / facing / inventory (GET /info)
 #   ./mcctl -f script.txt             run every line of a file, one request per line
 #   ./mcctl -r 'W 100;mouse left'     raw body (semicolon separated, one request)
 #
@@ -18,7 +19,7 @@ set -euo pipefail
 URL="${MCCTL_URL:-http://127.0.0.1:3420}"
 
 usage() {
-	sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+	sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
 	exit "${1:-0}"
 }
 
@@ -32,6 +33,10 @@ case "$1" in
 			exec curl -sS "$URL"
 		fi
 		usage 0
+		;;
+	info | player | status)
+		shift
+		curl -sS "$URL/info"
 		;;
 	prtsc | screenshot | -s)
 		shift
