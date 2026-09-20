@@ -121,7 +121,7 @@ noautopause 1.0.2 noautopause
 
 数据来自 Fabric Loader 的 `getAllMods()`，所以包含 Fabric API 的子模块、`minecraft`、`java` 这些内置项。
 
-> **玩家信息（坐标/方位/背包）已拆到独立模组** [MC Advanced Info Fetch](../MC-advanced-info-fetch/)：
+> **玩家信息（坐标/方位/背包）已拆到独立模组** [AdvancedInfoFetcher](https://github.com/MineAgent/AdvancedInfoFetcher)：
 > 监听 `127.0.0.1:3421`，`GET /info` 返回坐标/方位/背包/副手/盔甲，和 mcctl 可以同时装。
 
 ## 命令行工具
