@@ -82,13 +82,13 @@ public final class ControlServer {
 				return;
 			}
 
-			if (isInfoPath(path)) {
+			if (isModsPath(path)) {
 				if (!"GET".equals(method) && !"HEAD".equals(method) && !"POST".equals(method)) {
 					exchange.getResponseHeaders().set("Allow", "GET, HEAD, POST, OPTIONS");
 					respond(exchange, 405, "text/plain; charset=utf-8", "method not allowed: " + method + "\n");
 					return;
 				}
-				handleInfo(exchange);
+				handleMods(exchange);
 				return;
 			}
 
@@ -120,33 +120,24 @@ public final class ControlServer {
 				|| "/screenshot".equals(path) || "/screenshot.png".equals(path);
 	}
 
-	private static boolean isInfoPath(String path) {
-		return "/info".equals(path) || "/info.txt".equals(path) || "/player".equals(path);
+	private static boolean isModsPath(String path) {
+		return "/mods".equals(path) || "/mods.txt".equals(path) || "/modlist".equals(path);
 	}
 
-	/** {@code GET /info}: player position, facing and inventory as plain text. */
-	private void handleInfo(HttpExchange exchange) throws IOException {
-		if (!executor.isReady()) {
-			respond(exchange, 409, "text/plain; charset=utf-8",
-					"game not ready: " + executor.unavailableReason() + "\n");
-			return;
-		}
-
-		String info;
+	/** {@code GET /mods}: every loaded mod as {@code "<id> <version> <name>"} lines. */
+	private void handleMods(HttpExchange exchange) throws IOException {
+		String mods;
 		try {
-			info = executor.playerInfo();
+			mods = executor.loadedMods();
 		} catch (RuntimeException e) {
-			LOG.log(Level.WARNING, "player info failed", e);
-			respond(exchange, 500, "text/plain; charset=utf-8", "player info failed: " + e + "\n");
+			LOG.log(Level.WARNING, "mod list failed", e);
+			respond(exchange, 500, "text/plain; charset=utf-8", "mod list failed: " + e + "\n");
 			return;
 		}
-
-		if (info == null) {
-			respond(exchange, 409, "text/plain; charset=utf-8", "no world loaded (still on a menu?)\n");
-			return;
+		if (mods == null) {
+			mods = "";
 		}
-
-		respond(exchange, 200, "text/plain; charset=utf-8", info);
+		respond(exchange, 200, "text/plain; charset=utf-8", mods);
 	}
 
 	/** {@code GET /prtsc}: capture the current frame and hand it back as a PNG. */

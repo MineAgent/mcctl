@@ -40,23 +40,12 @@ public final class VerifyServer {
 		@Override public void sendChat(String m) { add("chat " + m); }
 
 		@Override
-		public String playerInfo() {
-			add("info");
-			return "玩家：FakePlayer\n"
-					+ "维度：minecraft:overworld\n"
-					+ "坐标：-219.53 105.00 112.31\n"
-					+ "方块：-220 105 112\n"
-					+ "方位：north\n"
-					+ "yaw：-135.2\n"
-					+ "pitch：12.4\n"
-					+ "选中：1\n"
-					+ "背包：\n"
-					+ "minecraft:oak_log 12\n"
-					+ "minecraft:stone 64\n"
-					+ "副手：\n"
-					+ "minecraft:torch 3\n"
-					+ "盔甲：\n"
-					+ "minecraft:diamond_helmet 1\n";
+		public String loadedMods() {
+			add("mods");
+			return "baritone 1.19.0 Baritone\n"
+					+ "fabric-api 0.160.0+26.2 Fabric API\n"
+					+ "fabricloader 0.19.5 Fabric Loader\n"
+					+ "mcctl 1.2.0 mcctl - Client Connect\n";
 		}
 
 		@Override

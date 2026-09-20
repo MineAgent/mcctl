@@ -5,7 +5,7 @@
 * `GET /` → 返回完整使用说明
 * `POST /` → 用纯文本命令操作游戏（按键、鼠标、视角、滚轮）
 * `GET /prtsc` → 截取当前游戏画面，直接返回 PNG 图片
-* `GET /info` → 返回玩家坐标/方位/背包物品数量（纯文本）
+* `GET /mods` → 列出所有已加载模组的 ID、版本、名称（纯文本）
 
 命令在主线程（渲染线程）执行，走的是原版输入管线（`KeyMapping` / `Screen` 事件），
 不抢占真实键鼠，也不会被反作弊当成外挂注入（这是客户端本地模组）。
@@ -19,7 +19,7 @@ curl -X POST --data-binary 'mouse mid'          http://127.0.0.1:3420
 curl -X POST --data-binary 'delay 80 W 50'      http://127.0.0.1:3420
 curl -X POST --data-binary 'bt goal ~ ~ ~20'    http://127.0.0.1:3420   # Baritone
 curl -o shot.png http://127.0.0.1:3420/prtsc    # 截图（PNG）
-curl http://127.0.0.1:3420/info                 # 玩家/背包信息
+curl http://127.0.0.1:3420/mods                 # 已加载模组列表
 ```
 
 ## 命令语法
@@ -97,37 +97,32 @@ curl -o shot.png http://127.0.0.1:3420/prtsc
   但**不会**往 `screenshots/` 目录写文件——PNG 直接通过 HTTP 返回。
 * 失败时：`409`（客户端没起来）、`500`（取帧超时/失败，文本里有原因）。
 
-### 玩家信息接口 `GET /info`
+### 模组列表接口 `GET /mods`
 
 ```bash
-curl http://127.0.0.1:3420/info
-./mcctl info
+curl http://127.0.0.1:3420/mods
+./mcctl mods
 ```
 
-返回 `200 text/plain; charset=utf-8`，每行一条，格式固定（别名 `/player`、`/info.txt`）：
+返回 `200 text/plain; charset=utf-8`，每行一个模组，格式 `<模组ID> <版本> <名称>`，按模组 ID 排序
+（别名 `/modlist`、`/mods.txt`）：
 
 ```
-玩家：DSH
-维度：minecraft:overworld
-坐标：-221.17 105.0 104.7
-方块：-222 105 104
-方位：west
-yaw：-293.5
-pitch：11.5
-选中：3
-背包：
-minecraft:crafting_table 1
-minecraft:stone 15
-副手：
-minecraft:torch 7
-盔甲：
-minecraft:diamond_helmet 1
+advanced-info-fetch 1.0.0 MC Advanced Info Fetch
+baritone 1.19.0 Baritone
+craftcmd 1.1.0 Craft Command
+fabric-api 0.160.0+26.2 Fabric API
+fabricloader 0.19.5 Fabric Loader
+java 25 OpenJDK 64-Bit Server VM
+mcctl 1.2.0 mcctl - Client Connect
+minecraft 26.2 Minecraft
+noautopause 1.0.2 noautopause
 ```
 
-* 坐标保留 2 位小数，yaw/pitch 1 位；`方块` 是所在方块坐标；`选中` 是快捷栏 1-9。
-* `背包：` 是**主背包 + 快捷栏**合并后按命名空间 ID 聚合的总数（同一物品分散在多格会相加），按 ID 排序。
-* `副手：`、`盔甲：` 两段**只有对应栏位有物品时才出现**（空栏不输出任何行）；盔甲段按 头/胸/腿/脚 顺序，每个有东西的栏位一行。
-* 不做任何"是不是盔甲"的判断——栏位里有什么就输出什么（例如戴个南瓜就会输出 `minecraft:carved_pumpkin 1`）。
+数据来自 Fabric Loader 的 `getAllMods()`，所以包含 Fabric API 的子模块、`minecraft`、`java` 这些内置项。
+
+> **玩家信息（坐标/方位/背包）已拆到独立模组** [MC Advanced Info Fetch](../MC-advanced-info-fetch/)：
+> 监听 `127.0.0.1:3421`，`GET /info` 返回坐标/方位/背包/副手/盔甲，和 mcctl 可以同时装。
 
 ## 命令行工具
 
@@ -140,7 +135,7 @@ minecraft:diamond_helmet 1
 ./mcctl help                    # 打印完整说明
 ./mcctl prtsc                   # 截图，存成 mcctl-<时间戳>.png
 ./mcctl prtsc shot.png          # 截图到指定文件
-./mcctl info                    # 玩家坐标/方位/背包 (GET /info)
+./mcctl mods                    # 已加载模组 ID/版本/名称 (GET /mods)
 ./mcctl -f script.txt           # 每行一个请求，顺序执行
 ./mcctl -r 'W 20;mouse left'    # 一个请求里多条命令
 MCCTL_URL=http://127.0.0.1:3420 ./mcctl F3
@@ -152,11 +147,11 @@ MCCTL_URL=http://127.0.0.1:3420 ./mcctl F3
 所以 Loom 不需要任何 mappings 配置（`build.gradle` 里没有 `mappings` 行）。
 
 ```bash
-./gradlew build          # 产物: build/libs/mcctl-1.1.0.jar
+./gradlew build          # 产物: build/libs/mcctl-1.2.0.jar
 ./gradlew runClient      # 直接启动带模组的客户端（需要正版登录/开发环境配置）
 ```
 
-安装：把 `build/libs/mcctl-1.1.0.jar` 丢进 `.minecraft/mods/`，
+安装：把 `build/libs/mcctl-1.2.0.jar` 丢进 `.minecraft/mods/`，
 再装 Fabric Loader 0.19.5+（不需要 Fabric API）。启动后日志里会出现：
 
 ```
@@ -175,7 +170,7 @@ mcctl listening on http://127.0.0.1:3420
 | `F3` | `Minecraft#debugEntries.toggleDebugOverlay()`（原版这段逻辑在私有的 `KeyboardHandler#keyPress` 里） |
 | 打开界面时 | 键盘/鼠标事件转发给当前 `Screen`，所以在背包里也能点格子、按 `E` 关闭 |
 | `/prtsc` 截图 | `Screenshot.takeScreenshot(gameRenderer.mainRenderTarget(), image -> ...)` 取帧，`NativeImage.writeToFile` 编码成 PNG 后读回内存返回（临时文件用完即删） |
-| `/info` | `Inventory#getNonEquipmentItems()`（主背包+快捷栏）按 `BuiltInRegistries.ITEM.getKey()` 的 ID 聚合，盔甲/副手走 `LivingEntity#getItemBySlot(HEAD/CHEST/LEGS/FEET/OFFHAND)`；维度取 `level().dimension().identifier()` |
+| `/mods` | `FabricLoader#getAllMods()` → `ModMetadata#getId/getVersion/getName`，按 ID 排序，输出 `<id> <version> <name>` |
 
 线程模型：HTTP 线程 → 单线程队列（保证顺序）→ `Minecraft.execute()` 到渲染线程执行输入。
 
@@ -204,7 +199,7 @@ mcctl                      命令行封装脚本
 
 | 测试 | 结果 |
 | --- | --- |
-| 启动 | 日志出现 `mcctl 1.1.0`，`ss -ltn` 看到 `127.0.0.1:3420` 在监听 |
+| 启动 | 日志出现 `mcctl 1.2.0`，`ss -ltn` 看到 `127.0.0.1:3420` 在监听 |
 | `GET /` | 200，返回完整中文说明 |
 | `GET /prtsc` | 200 `image/png`，854x480（窗口原生分辨率）、306KB、0.14s；画面就是存档里的丛林场景 |
 | `W 1500` | 截图对比：玩家确实往前走了一段 |
@@ -215,10 +210,8 @@ mcctl                      命令行封装脚本
 | `bt stop` | `[Baritone] ok canceled` |
 | `bt proc` / `bt help goal` | `No process in control` / goal 子命令帮助 |
 | `chat hello from mcctl` | 聊天里出现 `<DSH> hello from mcctl` |
-| `GET /info` | `200 text/plain`；玩家/维度/坐标/方块/方位/yaw/pitch/选中 与游戏内一致 |
-| `背包` 聚合 | hotbar.0 放 10 石头 + hotbar.1 放 5 → 输出 `minecraft:stone 15`（同一物品跨格相加，按 ID 排序） |
-| `副手：` | 副手放 7 火把 → 出现 `minecraft:torch 7`；清空后整段消失 |
-| `盔甲：` | 头盔槽 → `minecraft:diamond_helmet 1`；换成南瓜 → `minecraft:carved_pumpkin 1`（栏位里有什么就报什么，不判断是否盔甲） |
+| `GET /mods` | `200 text/plain`；列出 57 个已加载模组（含 Fabric API 子模块、`minecraft`、`java`），格式 `<id> <version> <name>` 按 ID 排序 |
+| `/mods` 别名 | `/modlist`、`/mods.txt` 都返回同样的列表；`./mcctl mods` 输出一致 |
 | `delay 200 mouse move 0 +120` + 多行脚本 | 按顺序执行，JSON 回显规范化后的命令 |
 
 其它验证：

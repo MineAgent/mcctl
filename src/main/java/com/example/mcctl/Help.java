@@ -20,8 +20,8 @@ public final class Help {
 				  POST /            执行命令, 请求体为纯文本 (text/plain, UTF-8)
 				  GET  /prtsc       截取当前游戏画面, 直接返回 PNG 图片 (原生分辨率)
 				                    (别名: /screenshot, /prtsc.png)
-				  GET  /info        返回玩家坐标/方位/背包物品数量 (纯文本, 每行一条)
-				                    (别名: /player, /info.txt)
+				  GET  /mods        列出所有已加载模组的 ID/版本/名称 (纯文本, 每行一条)
+				                    (别名: /modlist, /mods.txt)
 
 				命令语法
 				------------------------------------------------------------
@@ -70,7 +70,7 @@ public final class Help {
 				  curl -X POST --data-binary 'bt goal ~ ~ ~20'  http://127.0.0.1:3420   # 走到前方 20 格
 				  curl -X POST --data-binary 'bt stop'          http://127.0.0.1:3420   # 停止寻路
 				  curl http://127.0.0.1:3420                                             # 本说明
-				  curl http://127.0.0.1:3420/info                                        # 玩家信息
+				  curl http://127.0.0.1:3420/mods                                        # 已加载模组
 				  curl -o shot.png http://127.0.0.1:3420/prtsc                           # 截图到文件
 
 				  # 多行 = 顺序执行的小脚本 (上一行结束后才执行下一行)
@@ -80,7 +80,7 @@ public final class Help {
 				返回
 				  200  {"ok":true,"queued":<队列长度>,"inWorld":true,"actions":["W 100"]}
 				  200  /prtsc 返回 PNG 图片 (Content-Type: image/png)
-				  200  /info 返回玩家信息纯文本 (Content-Type: text/plain)
+				  200  /mods 返回模组列表纯文本 (Content-Type: text/plain)
 				  400  命令语法错误 (text/plain, 说明出错的行)
 				  409  游戏客户端还没启动
 				  413  请求体过大 (>64KB)
@@ -92,7 +92,8 @@ public final class Help {
 				打开界面时, 按键/鼠标事件转发给该界面 (例如 E 关闭背包, esc 返回)
 				主菜单等界面一样可以操作, 例如 mouse left 点 "单人游戏" 按钮
 				/prtsc 与游戏内 F2 用同一套取帧逻辑, 截的是当前帧, 不会写入 screenshots 目录
-				/info 依次输出: 玩家/维度/坐标/方块/方位/yaw/pitch/选中, 然后 "背包：" 加每行 "<命名空间ID> <数量>"; "副手：" 和 "盔甲：" 仅在对应栏位有物品时才出现
+				/mods 每行 "<模组ID> <版本> <名称>", 按模组 ID 排序
+				玩家信息(坐标/方位/背包)已拆到另一个模组 MC Advanced Info Fetch: GET http://127.0.0.1:3421/info
 				bt/# 命令优先直接调用 Baritone API (不发聊天包), 没装 Baritone 时才走聊天
 				在 shell 里用 bt 时要给整条命令加引号, 否则 bash 会把 ~ 展开成 $HOME: ./mcctl 'bt goal ~ ~ ~20'
 				F3 单独按可切换调试信息; F3+其他键 (如 F3+G) 的组合暂不支持
