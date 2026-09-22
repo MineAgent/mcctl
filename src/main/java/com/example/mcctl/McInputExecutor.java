@@ -8,7 +8,10 @@ import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.input.MouseButtonInfo;
@@ -28,6 +31,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -49,6 +53,13 @@ import java.util.logging.Logger;
  */
 public final class McInputExecutor implements InputExecutor {
 	private static final Logger LOG = Logger.getLogger("mcctl");
+
+	/** How long the HTTP thread waits for the typing commands to finish on the client thread. */
+	private static final long TYPE_TIMEOUT_MS = 5_000L;
+
+	/** Reported by {@code type} / {@code typeEnter} when there is nothing to type into. */
+	private static final String NO_TEXT_BOX =
+			"no focused text box - open the chat box with T first (anvil, sign and book are not supported)";
 
 	/** private MouseHandler#onScroll(long, double, double) - used for the mouse wheel. */
 	private static Method onScroll;
@@ -84,6 +95,56 @@ public final class McInputExecutor implements InputExecutor {
 		return new MouseButtonEvent(x, y, new MouseButtonInfo(button, 0));
 	}
 
+	/**
+	 * Runs a task on the client thread and hands its result back to the caller.
+	 *
+	 * <p>Only used by the typing commands, which have to report a failure (no text box) as an HTTP
+	 * status; everything else stays fire-and-forget.</p>
+	 */
+	private static String callOnClientThread(Supplier<String> task, long timeoutMs) {
+		Minecraft minecraft = mc();
+		if (minecraft == null) {
+			return "Minecraft client is not running";
+		}
+		if (minecraft.isSameThread()) {
+			return task.get();
+		}
+
+		CompletableFuture<String> result = new CompletableFuture<>();
+		minecraft.execute(() -> {
+			try {
+				result.complete(task.get());
+			} catch (Throwable t) {
+				result.completeExceptionally(t);
+			}
+		});
+
+		try {
+			return result.get(timeoutMs, TimeUnit.MILLISECONDS);
+		} catch (TimeoutException e) {
+			return "the client thread did not answer within " + timeoutMs + " ms";
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			return "interrupted";
+		} catch (ExecutionException e) {
+			Throwable cause = e.getCause();
+			return cause == null ? String.valueOf(e) : String.valueOf(cause);
+		}
+	}
+
+	/**
+	 * @return true when the chat box is open <em>right now</em>. The screen is read fresh on every
+	 *         call, nothing about the chat box is remembered between requests.
+	 */
+	private static boolean chatFocused(Minecraft minecraft) {
+		return minecraft.gui.screen() instanceof ChatScreen;
+	}
+
+	/** @return the focused text box of that screen, or {@code null} (chat box yes, anvil/sign/book no) */
+	private static EditBox focusedTextBox(Screen screen) {
+		return screen != null && screen.getFocused() instanceof EditBox box ? box : null;
+	}
+
 	// ------------------------------------------------------------------ keys
 
 	@Override
@@ -100,6 +161,26 @@ public final class McInputExecutor implements InputExecutor {
 			}
 
 			Screen screen = minecraft.gui.screen();
+
+			// While the chat box is open the routing follows intent, and the chat box state is read
+			// fresh for every request (nothing is cached):
+			//   * E / Q / 1-9  -> close the chat box, then run as usual. Vanilla skips
+			//     handleKeybinds() while a screen is open, so the open/close/drop/select actions
+			//     would otherwise be swallowed.
+			//   * editing keys (backspace, arrows, enter, ...) and esc -> stay in the chat box.
+			//   * everything else (WASD, space, ...) -> keep controlling the game while typing.
+			if (screen != null && chatFocused(minecraft)) {
+				if (Keys.isChatAction(code)) {
+					screen.keyPressed(new KeyEvent(Keys.ESC, 0, 0));
+					screen = minecraft.gui.screen();
+				} else if (Keys.isTextEditing(code) || code == Keys.ESC) {
+					screen.keyPressed(new KeyEvent(code, 0, 0));
+					return;
+				} else {
+					screen = null;
+				}
+			}
+
 			if (screen != null) {
 				screen.keyPressed(new KeyEvent(code, 0, 0));
 				return;
@@ -128,10 +209,60 @@ public final class McInputExecutor implements InputExecutor {
 			KeyMapping.set(key, false);
 
 			Screen screen = minecraft.gui.screen();
-			if (screen != null) {
-				screen.keyReleased(new KeyEvent(code, 0, 0));
+			if (screen == null) {
+				return;
 			}
+			if (chatFocused(minecraft) && !Keys.isTextEditing(code) && code != Keys.ESC) {
+				// The press went to the game (movement keys and friends), so the release must too.
+				return;
+			}
+			screen.keyReleased(new KeyEvent(code, 0, 0));
 		});
+	}
+
+	// ----------------------------------------------------------------- typing
+
+	@Override
+	public String typeText(String text) {
+		return callOnClientThread(() -> {
+			Minecraft minecraft = mc();
+			if (minecraft == null) {
+				return "Minecraft client is not running";
+			}
+			if (text == null || text.isEmpty()) {
+				return "nothing to type";
+			}
+
+			Screen screen = minecraft.gui.screen();
+			if (focusedTextBox(screen) == null) {
+				return NO_TEXT_BOX;
+			}
+
+			for (int i = 0; i < text.length(); ) {
+				int codepoint = text.codePointAt(i);
+				i += Character.charCount(codepoint);
+				screen.charTyped(new CharacterEvent(codepoint));
+			}
+			return null;
+		}, TYPE_TIMEOUT_MS);
+	}
+
+	@Override
+	public String typeEnter() {
+		return callOnClientThread(() -> {
+			Minecraft minecraft = mc();
+			if (minecraft == null) {
+				return "Minecraft client is not running";
+			}
+
+			Screen screen = minecraft.gui.screen();
+			if (focusedTextBox(screen) == null) {
+				return NO_TEXT_BOX;
+			}
+
+			screen.keyPressed(new KeyEvent(Keys.ENTER, 0, 0));
+			return null;
+		}, TYPE_TIMEOUT_MS);
 	}
 
 	// ----------------------------------------------------------- mouse buttons
@@ -142,7 +273,7 @@ public final class McInputExecutor implements InputExecutor {
 		onClientThread(() -> {
 			Minecraft minecraft = mc();
 			Screen screen = minecraft.gui.screen();
-			if (screen != null) {
+			if (screen != null && !chatFocused(minecraft)) {
 				screen.mouseClicked(mouseEvent(button), false);
 				return;
 			}
@@ -161,7 +292,7 @@ public final class McInputExecutor implements InputExecutor {
 			KeyMapping.set(key, false);
 
 			Screen screen = minecraft.gui.screen();
-			if (screen != null) {
+			if (screen != null && !chatFocused(minecraft)) {
 				screen.mouseReleased(mouseEvent(button));
 			}
 		});
@@ -175,7 +306,8 @@ public final class McInputExecutor implements InputExecutor {
 			Minecraft minecraft = mc();
 			Screen screen = minecraft.gui.screen();
 
-			if (screen != null && minecraft.mouseHandler != null && !minecraft.mouseHandler.isMouseGrabbed()) {
+			if (screen != null && !chatFocused(minecraft) && minecraft.mouseHandler != null
+					&& !minecraft.mouseHandler.isMouseGrabbed()) {
 				// GUI: move the real cursor, the game picks it up on the next frame.
 				long handle = minecraft.getWindow().handle();
 				GLFW.glfwSetCursorPos(handle, minecraft.mouseHandler.xpos() + dx,
@@ -209,7 +341,7 @@ public final class McInputExecutor implements InputExecutor {
 		onClientThread(() -> {
 			Minecraft minecraft = mc();
 			Screen screen = minecraft.gui.screen();
-			if (screen != null) {
+			if (screen != null && !chatFocused(minecraft)) {
 				screen.mouseScrolled(minecraft.mouseHandler.getScaledXPos(minecraft.getWindow()),
 						minecraft.mouseHandler.getScaledYPos(minecraft.getWindow()), 0.0, amount);
 				return;

@@ -19,6 +19,36 @@ public final class Keys {
 	public static final int ESC = 256;
 	/** GLFW_KEY_F3 */
 	public static final int F3 = 292;
+	/** GLFW_KEY_ENTER */
+	public static final int ENTER = 257;
+	/** GLFW_KEY_TAB */
+	public static final int TAB = 258;
+	/** GLFW_KEY_BACKSPACE */
+	public static final int BACKSPACE = 259;
+	/** GLFW_KEY_DELETE */
+	public static final int DELETE = 261;
+	/** GLFW_KEY_RIGHT */
+	public static final int RIGHT = 262;
+	/** GLFW_KEY_LEFT */
+	public static final int LEFT = 263;
+	/** GLFW_KEY_DOWN */
+	public static final int DOWN = 264;
+	/** GLFW_KEY_UP */
+	public static final int UP = 265;
+	/** GLFW_KEY_HOME */
+	public static final int HOME = 268;
+	/** GLFW_KEY_END */
+	public static final int END = 269;
+	/** GLFW_KEY_KP_ENTER */
+	public static final int KP_ENTER = 335;
+	/** GLFW_KEY_E */
+	public static final int E = 69;
+	/** GLFW_KEY_Q */
+	public static final int Q = 81;
+	/** GLFW_KEY_1 (hotbar slot 1) */
+	public static final int DIGIT_1 = 49;
+	/** GLFW_KEY_9 (hotbar slot 9) */
+	public static final int DIGIT_9 = 57;
 
 	/** canonical name -> GLFW key code */
 	private static final Map<String, Integer> CANON = new LinkedHashMap<>();
@@ -181,6 +211,26 @@ public final class Keys {
 			case 2 -> "mid";
 			default -> "button" + button;
 		};
+	}
+
+	/**
+	 * Keys whose action is driven by {@code Minecraft#handleKeybinds()} through
+	 * {@code KeyMapping#consumeClick()} — open inventory, drop item, select a hotbar slot.
+	 *
+	 * <p>Vanilla skips that code path while any screen is open, so while the chat box is open mcctl
+	 * closes it first and then delivers the key through the normal (screen-less) path.</p>
+	 */
+	public static boolean isChatAction(int code) {
+		return code == E || code == Q || (code >= DIGIT_1 && code <= DIGIT_9);
+	}
+
+	/**
+	 * Keys that belong to the text box itself: editing, submitting or completing. While the chat box
+	 * is open they keep being forwarded to it instead of the game.
+	 */
+	public static boolean isTextEditing(int code) {
+		return code == ENTER || code == KP_ENTER || code == TAB || code == BACKSPACE || code == DELETE
+				|| code == LEFT || code == RIGHT || code == UP || code == DOWN || code == HOME || code == END;
 	}
 
 	/** Short summary of the most useful key names (used in error messages / help). */

@@ -24,6 +24,9 @@ import java.util.regex.Pattern;
  * bt goal ~ ~ ~20       run the Baritone command "goal ~ ~ ~20"
  * bt help               run the Baritone command "help"      (= "#help" in chat)
  * chat hello            send a plain chat message
+ * type hello            type "hello" into the focused text box (chat box)
+ * type hello\n          type "hello" and press ENTER (\n = ENTER, other backslashes are literal)
+ * typeEnter             press ENTER in the focused text box (sends the message)
  * #goal ~ ~ ~20         shorthand for "bt goal ~ ~ ~20"
  * </pre>
  *
@@ -123,6 +126,21 @@ public final class CommandParser {
 			return;
 		}
 
+		if (head.equalsIgnoreCase("type") || head.equalsIgnoreCase("typetext")
+				|| head.equalsIgnoreCase("type_text")) {
+			if (remainder.isEmpty()) {
+				throw new CommandException(lineNo, "'" + head + "' needs text, e.g. type hello");
+			}
+			parseTypeText(remainder, delay, out);
+			return;
+		}
+
+		if (head.equalsIgnoreCase("typeenter") || head.equalsIgnoreCase("type_enter")) {
+			requireEnd(token, 1, lineNo, "typeEnter");
+			out.add(Action.typeEnter(delay));
+			return;
+		}
+
 		if (head.equalsIgnoreCase("mouse")) {
 			parseMouse(token, lineNo, delay, out);
 			return;
@@ -155,6 +173,29 @@ public final class CommandParser {
 		requireEnd(token, next, lineNo, "key command");
 
 		out.add(Action.keys(keys, clampHold(hold, lineNo), delay));
+	}
+
+	/**
+	 * Splits a {@code type} payload on the escape {@code \n} into text / ENTER / text ... steps.
+	 *
+	 * <p>{@code type hello\n} types {@code hello} and then presses ENTER (the chat box sends the
+	 * message and closes); a payload of only {@code \n} is a bare ENTER. Any other backslash is
+	 * literal.</p>
+	 */
+	private static void parseTypeText(String text, long delay, List<Action> out) {
+		String[] parts = text.split("\\\\n", -1);
+		boolean delayUsed = false;
+
+		for (int i = 0; i < parts.length; i++) {
+			if (i > 0) {
+				out.add(Action.typeEnter(delayUsed ? 0L : delay));
+				delayUsed = true;
+			}
+			if (!parts[i].isEmpty()) {
+				out.add(Action.typeText(parts[i], delayUsed ? 0L : delay));
+				delayUsed = true;
+			}
+		}
 	}
 
 	/** Turns "goal ~ ~ ~20" / "#goal ~ ~ ~20" into the chat form "#goal ~ ~ ~20". */

@@ -32,6 +32,10 @@ public record Action(Kind kind, List<String> keys, String button, String message
 		MOUSE_SCROLL,
 		/** send a chat message (Baritone commands start with '#') */
 		CHAT,
+		/** type text into the focused text box of the open screen */
+		TYPE_TEXT,
+		/** press ENTER in the focused text box of the open screen */
+		TYPE_ENTER,
 		/** release every held key/button */
 		RELEASE_ALL
 	}
@@ -60,6 +64,15 @@ public record Action(Kind kind, List<String> keys, String button, String message
 		return new Action(Kind.CHAT, null, null, message, 0, delayMs, 0, 0, 0.0);
 	}
 
+	/** One {@code type} chunk; typing happens on the client thread and reports failures back. */
+	public static Action typeText(String text, long delayMs) {
+		return new Action(Kind.TYPE_TEXT, null, null, text, 0, delayMs, 0, 0, 0.0);
+	}
+
+	public static Action typeEnter(long delayMs) {
+		return new Action(Kind.TYPE_ENTER, null, null, null, 0, delayMs, 0, 0, 0.0);
+	}
+
 	public static Action releaseAll(long delayMs) {
 		return new Action(Kind.RELEASE_ALL, null, null, null, 0, delayMs, 0, 0, 0.0);
 	}
@@ -78,6 +91,8 @@ public record Action(Kind kind, List<String> keys, String button, String message
 					? String.valueOf((long) amount) : String.valueOf(amount));
 			case CHAT -> message != null && message.startsWith("#")
 					? "bt " + message.substring(1) : "chat " + message;
+			case TYPE_TEXT -> "type " + message;
+			case TYPE_ENTER -> "typeEnter";
 			case RELEASE_ALL -> "release";
 		};
 		return delayMs > 0 ? "delay " + delayMs + " " + body : body;

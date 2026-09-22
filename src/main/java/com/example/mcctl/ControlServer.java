@@ -184,7 +184,18 @@ public final class ControlServer {
 			return;
 		}
 
-		runner.submit(plan);
+		if (needsTextBox(plan)) {
+			// Typing reports an outcome (no text box -> 400), so that request runs synchronously on
+			// the usual single worker: the actions keep their order and we wait for the result.
+			String failure = runner.submitAndWait(plan, waitBudgetMs(plan));
+
+			if (failure != null) {
+				respond(exchange, 400, "text/plain; charset=utf-8", "type failed: " + failure + "\n");
+				return;
+			}
+		} else {
+			runner.submit(plan);
+		}
 
 		StringBuilder json = new StringBuilder();
 		json.append("{\"ok\":true,\"queued\":").append(runner.pending())
@@ -199,6 +210,25 @@ public final class ControlServer {
 		json.append("]}\n");
 
 		respond(exchange, 200, "application/json; charset=utf-8", json.toString());
+	}
+
+	/** True when the plan types into a text box, i.e. it has an outcome worth reporting. */
+	private static boolean needsTextBox(List<Action> plan) {
+		for (Action action : plan) {
+			if (action.kind() == Action.Kind.TYPE_TEXT || action.kind() == Action.Kind.TYPE_ENTER) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** How long the HTTP thread is willing to wait for a typing request (its own holds + 5 s). */
+	private static long waitBudgetMs(List<Action> plan) {
+		long budget = 5_000L;
+		for (Action action : plan) {
+			budget += action.holdMs() + action.delayMs();
+		}
+		return Math.min(budget, 120_000L);
 	}
 
 	private static byte[] readBody(HttpExchange exchange) throws IOException {

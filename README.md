@@ -36,12 +36,46 @@ curl http://127.0.0.1:3420/mods                 # 已加载模组列表
 | `bt <命令>` | 执行 Baritone 命令，等价于聊天框输入 `#<命令>` |
 | `#<命令>` | 同 `bt`，例如 `#goal ~ ~ ~20` |
 | `chat <文本>` | 发一条普通聊天消息（`/` 开头则当指令发送） |
+| `type <文本>` | 往当前聚焦的文本框里逐字打字（目前主要是聊天框），文本里的 `\n` 表示回车 |
+| `typeEnter` | 在文本框里按回车（发送聊天框内容） |
 
 * 大小写不敏感，`W` = `w`，`esc` = `ESC` = `Escape`。
 * 一个 POST 里可以写多行（或用 `;` 分隔），**严格按顺序执行**：下一行在上一行结束后才开始。
 * 时长上限 600000ms；`delay` 上限相同。`//` 开头的行是注释。
 * 在 shell 里发 `bt` 命令要加引号，否则 bash 会把 `~` 展开成 `$HOME`：
   `./mcctl 'bt goal ~ ~ ~20'`（用 curl 时 `--data-binary '...'` 本来就是引号，没问题）。
+
+### 打字 `type` / `typeEnter`
+
+```bash
+curl -X POST --data-binary 'T 50'         http://127.0.0.1:3420   # 先打开聊天框
+curl -X POST --data-binary 'type hello'   http://127.0.0.1:3420   # 打进聊天框
+curl -X POST --data-binary 'typeEnter'    http://127.0.0.1:3420   # 发送
+curl -X POST --data-binary 'type hi\n'    http://127.0.0.1:3420   # 打字并回车（\n = ENTER）
+curl -X POST --data-binary $'T 50\ntype hi\ntypeEnter' http://127.0.0.1:3420   # 一个请求走完
+```
+
+* 字符走原版的 `Screen#charTyped`（`CharacterEvent`），不是键码，所以不受键盘布局影响。
+* 只有**聚焦的 `EditBox`** 能接收：聊天框可以；铁砧命名、告示牌、书与笔**不支持**（它们不是 `EditBox`，
+  短期内也不打算支持）。创造模式背包的搜索框会被当成普通文本框接受。
+* 没有可输入的文本框时返回 **400**（`type failed: no focused text box ...`）。
+* 含 `type`/`typeEnter` 的请求会**同步执行完再返回**（其余请求仍是"排队后立刻返回"），
+  这样失败能直接反映成 HTTP 状态。
+
+### 聊天框开着时的按键路由
+
+每次请求都**现读**当前界面状态，模组不缓存"聊天框是否打开"：
+
+| 输入 | 行为 |
+| --- | --- |
+| `type` / `typeEnter` | 打进聊天框 |
+| `E` / `Q` / `1`~`9` | **先关掉聊天框**，再执行打开背包 / 丢弃 / 切快捷栏（原版在界面开着时会跳过 `handleKeybinds()`） |
+| `BACKSPACE` 方向键 `ENTER` `TAB`… | 仍然作用于聊天框（编辑/发送/补全） |
+| `ESC` | 关掉聊天框 |
+| `W` `A` `S` `D` `SPACE` `SHIFT`… | **不关聊天框**，直接控制游戏（可以边开着聊天框走路） |
+| `mouse move` / `left` / `right` / `scroll` | 直接作用于世界（聊天框不吃鼠标） |
+
+其余界面（背包、箱子、工作台、熔炉…）的行为不变：按键/鼠标照旧转发给该界面。
 
 ### Baritone 支持
 
@@ -230,6 +264,9 @@ mcctl                      命令行封装脚本
 
 已知限制：
 
+* 打字（`type` / `typeEnter`）只支持**聚焦的 `EditBox`**：聊天框可以，**铁砧命名、告示牌、书与笔不支持**
+  （它们在 26.2 里不是 `EditBox`，要逐界面特判，短期不打算做）。没有可输入的文本框时返回 400。
+* `type` 只认一个转义 `\n`（回车），其余反斜杠按字面处理。
 * `F3` 单独按可以切换调试信息，但 `F3+X` 组合键（如 `F3+G` 区块边界）不生效——原版这段逻辑在
   私有的 `KeyboardHandler#keyPress` 里，本模组只公开复刻了 `F3` 的开关行为。
 * 游戏内滚轮走反射调用 `MouseHandler#onScroll`；若将来版本改名，`mouse scroll` 会静默失效（其他命令不受影响）。
@@ -237,12 +274,20 @@ mcctl                      命令行封装脚本
   Minecraft 的退出看门狗会写一份 `Client shutdown from post-main` 崩溃报告（游戏本身已经存档完毕、
   进程随后被看门狗强制结束，不影响使用）。要彻底消掉这个报告需要自己实现 HTTP 循环或监听客户端退出事件。
 
-## 构建环境说明
+## 构建
 
-`gradle.properties` 里有一行 `org.gradle.java.home=/home/DSH/.jdks/temurin-25`：因为本机 `PATH`
-里的 `/usr/lib/jvm/java-25-openjdk` 是 JRE（没有 `javac`），Gradle 工具链会因此报
-`does not provide the required capabilities: [JAVA_COMPILER]`。换机器时把这一行删掉或改成你自己的 JDK 25 路径
-（也可以 `export JAVA_HOME=<JDK25>` 后再构建）。
+需要 **JDK 25**（`java -version` 与 `javac -version` 都应是 25；只有 JRE 时 Gradle 会在配置阶段报
+`does not provide the required capabilities: [JAVA_COMPILER]`）。
+
+```bash
+./gradlew build          # -> build/libs/mcctl-<version>.jar
+```
+
+Gradle 会自动使用 `JAVA_HOME` 或 `PATH` 里的 JDK；需要指定别的 JDK 时：
+
+```bash
+JAVA_HOME=/path/to/jdk-25 ./gradlew build
+```
 
 ## 安全说明
 

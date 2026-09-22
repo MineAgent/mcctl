@@ -38,9 +38,23 @@ public final class Help {
 				  bt <命令>                      执行 Baritone 命令, 等价于聊天框输入 #<命令>
 				  #<命令>                        同上, 例如 #goal ~ ~ ~20
 				  chat <文本>                    发送一条普通聊天消息 (以 / 开头则当指令发送)
+				  type <文本>                    往当前打开的文本框里逐字打字 (目前只有聊天框)
+				                                 文本里的 \\n 表示回车, 例如 type hello\\n
+				  typeEnter                      在文本框里按回车 (发送聊天框内容)
 				  例: bt help / bt goal ~ ~ ~20 / bt stop / bt goto 100 64 200
 				  装了 Baritone 时直接调用它的 API 执行 (不经过聊天框);
 				  没装 Baritone 时退化成一条普通聊天消息 (内容是 #<命令>)。
+				  type/typeEnter 需要当前有一个聚焦的文本框, 否则返回 400。
+				  铁砧命名、告示牌、书与笔暂时不支持 (它们的文本框不是 EditBox, 且短期不打算支持)。
+
+				聊天框开着时的按键路由 (每次请求现读界面状态, 不缓存)
+				  type / typeEnter        打进聊天框
+				  E / Q / 1-9             先关掉聊天框, 再执行打开背包/丢弃/切快捷栏
+				  BACKSPACE 方向键 ENTER  仍然作用在聊天框 (编辑/发送/补全)
+				  ESC                     关掉聊天框
+				  W A S D SPACE SHIFT ... 不关聊天框, 直接控制游戏 (可以边开着聊天框走路)
+				  mouse move / left / right 直接作用于世界 (聊天框不会吃掉鼠标)
+				  多行脚本可写 'T 50' + 'type hello' + 'typeEnter', 会按顺序执行。
 
 				支持的按键 (不分大小写)
 				  字母   A B C ... X Y Z
@@ -66,6 +80,10 @@ public final class Help {
 				  curl -X POST --data-binary 'esc'              http://127.0.0.1:3420   # 暂停菜单/关闭界面
 				  curl -X POST --data-binary 'F3'               http://127.0.0.1:3420   # 调试信息
 				  curl -X POST --data-binary 'E 50'             http://127.0.0.1:3420   # 打开/关闭背包
+				  curl -X POST --data-binary 'T 50'             http://127.0.0.1:3420   # 打开聊天框
+				  curl -X POST --data-binary 'type hello'       http://127.0.0.1:3420   # 打字进聊天框
+				  curl -X POST --data-binary 'typeEnter'        http://127.0.0.1:3420   # 发送
+				  curl -X POST --data-binary 'type hi\n'        http://127.0.0.1:3420   # 打字并回车
 				  curl -X POST --data-binary 'bt help'          http://127.0.0.1:3420   # Baritone 帮助
 				  curl -X POST --data-binary 'bt goal ~ ~ ~20'  http://127.0.0.1:3420   # 走到前方 20 格
 				  curl -X POST --data-binary 'bt stop'          http://127.0.0.1:3420   # 停止寻路
@@ -82,14 +100,17 @@ public final class Help {
 				  200  /prtsc 返回 PNG 图片 (Content-Type: image/png)
 				  200  /mods 返回模组列表纯文本 (Content-Type: text/plain)
 				  400  命令语法错误 (text/plain, 说明出错的行)
+				  400  含 type/typeEnter 的请求: 当前没有可输入的文本框 (这类请求会同步执行完再返回)
 				  409  游戏客户端还没启动
 				  413  请求体过大 (>64KB)
 
 				注意事项
 				时长缺省 50ms, 上限 600000ms; delay 上限为 600000ms
 				同请求里的多命令将顺序执行, 命令进入单一队列
+				含 type/typeEnter 的请求是同步的: 排队、执行完、再返回结果 (失败返回 400)
 				鼠标移动会像真实鼠标一样旋转视角 (受游戏内"鼠标灵敏度"影响)
-				打开界面时, 按键/鼠标事件转发给该界面 (例如 E 关闭背包, esc 返回)
+				打开界面时, 按键/鼠标事件转发给该界面 (例如 E 关闭背包, esc 返回);
+				只有聊天框例外, 见上面的"聊天框开着时的按键路由"
 				主菜单等界面一样可以操作, 例如 mouse left 点 "单人游戏" 按钮
 				/prtsc 与游戏内 F2 用同一套取帧逻辑, 截的是当前帧, 不会写入 screenshots 目录
 				/mods 每行 "<模组ID> <版本> <名称>", 按模组 ID 排序

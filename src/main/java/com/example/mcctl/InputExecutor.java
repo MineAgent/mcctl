@@ -36,6 +36,24 @@ public interface InputExecutor {
 	void sendChat(String message);
 
 	/**
+	 * Types text into the text box of the screen that is open right now.
+	 *
+	 * <p>The text box is looked up when this runs — no state is remembered between requests. Only a
+	 * focused {@code EditBox} qualifies (the chat box does); anvil naming, signs and books are not
+	 * supported on purpose.</p>
+	 *
+	 * @return {@code null} when the text was typed, otherwise a human readable reason (no text box)
+	 */
+	String typeText(String text);
+
+	/**
+	 * Presses ENTER in the text box of the screen that is open right now (sends the chat message).
+	 *
+	 * @return {@code null} on success, otherwise a human readable reason (no text box)
+	 */
+	String typeEnter();
+
+	/**
 	 * Captures the current game frame.
 	 *
 	 * @return the frame encoded as PNG
