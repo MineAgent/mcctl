@@ -148,7 +148,7 @@ craftcmd 1.1.0 Craft Command
 fabric-api 0.160.0+26.2 Fabric API
 fabricloader 0.19.5 Fabric Loader
 java 25 OpenJDK 64-Bit Server VM
-mcctl 1.2.0 mcctl - Client Connect
+mcctl 1.4.0 mcctl - Client Connect
 minecraft 26.2 Minecraft
 noautopause 1.0.2 noautopause
 ```
@@ -181,11 +181,11 @@ MCCTL_URL=http://127.0.0.1:3420 ./mcctl F3
 所以 Loom 不需要任何 mappings 配置（`build.gradle` 里没有 `mappings` 行）。
 
 ```bash
-./gradlew build          # 产物: build/libs/mcctl-1.2.0.jar
+./gradlew build          # 产物: build/libs/mcctl-1.4.0.jar
 ./gradlew runClient      # 直接启动带模组的客户端（需要正版登录/开发环境配置）
 ```
 
-安装：把 `build/libs/mcctl-1.2.0.jar` 丢进 `.minecraft/mods/`，
+安装：把 `build/libs/mcctl-1.4.0.jar` 丢进 `.minecraft/mods/`，
 再装 Fabric Loader 0.19.5+（不需要 Fabric API）。启动后日志里会出现：
 
 ```
@@ -205,6 +205,7 @@ mcctl listening on http://127.0.0.1:3420
 | 打开界面时 | 键盘/鼠标事件转发给当前 `Screen`，所以在背包里也能点格子、按 `E` 关闭 |
 | `/prtsc` 截图 | `Screenshot.takeScreenshot(gameRenderer.mainRenderTarget(), image -> ...)` 取帧，`NativeImage.writeToFile` 编码成 PNG 后读回内存返回（临时文件用完即删） |
 | `/mods` | `FabricLoader#getAllMods()` → `ModMetadata#getId/getVersion/getName`，按 ID 排序，输出 `<id> <version> <name>` |
+| 关游戏 | `ClientExitWatcher` 守候渲染线程（`Minecraft#getRunningThread()`）；线程结束后停掉本模组的 HTTP 服务并 `System.exit(0)`，赶在 post-main 看门狗写报告之前结束 JVM |
 
 线程模型：HTTP 线程 → 单线程队列（保证顺序）→ `Minecraft.execute()` 到渲染线程执行输入。
 
@@ -213,6 +214,7 @@ mcctl listening on http://127.0.0.1:3420
 ```
 src/main/java/com/example/mcctl/
   McCtlClientMod.java    Fabric 客户端入口，启动 3420 端口服务
+  ClientExitWatcher.java 守候渲染线程，客户端退出后停掉服务（消除 post-main 崩溃报告）
   ControlServer.java     HTTP 服务（JDK 自带 com.sun.net.httpserver）
   CommandParser.java     命令解析（纯 Java，可脱离游戏测试）
   Action.java            解析结果
@@ -229,11 +231,11 @@ mcctl                      命令行封装脚本
 ## 验证情况
 
 **已经在真实游戏里跑通**（Minecraft 26.2 + Fabric Loader 0.19.5 + Fabric API 0.160.0 + Baritone 1.19.0，
-用 `/home/DSH/mc.sh` 启动，`--quickPlaySingleplayer test` 直接进存档；模组 jar 放在 `.minecraft/mods/`）：
+用 `Documents/spMC/TestSave.sh` 启动，`--quickPlaySingleplayer test` 直接进存档；模组 jar 放在 `.minecraft/mods/`）：
 
 | 测试 | 结果 |
 | --- | --- |
-| 启动 | 日志出现 `mcctl 1.2.0`，`ss -ltn` 看到 `127.0.0.1:3420` 在监听 |
+| 启动 | 日志出现 `mcctl 1.4.0`，`ss -ltn` 看到 `127.0.0.1:3420` 在监听 |
 | `GET /` | 200，返回完整中文说明 |
 | `GET /prtsc` | 200 `image/png`，854x480（窗口原生分辨率）、306KB、0.14s；画面就是存档里的丛林场景 |
 | `W 1500` | 截图对比：玩家确实往前走了一段 |
@@ -247,6 +249,8 @@ mcctl                      命令行封装脚本
 | `GET /mods` | `200 text/plain`；列出 57 个已加载模组（含 Fabric API 子模块、`minecraft`、`java`），格式 `<id> <version> <name>` 按 ID 排序 |
 | `/mods` 别名 | `/modlist`、`/mods.txt` 都返回同样的列表；`./mcctl mods` 输出一致 |
 | `delay 200 mouse move 0 +120` + 多行脚本 | 按顺序执行，JSON 回显规范化后的命令 |
+| 正常退出（旧行为） | 关窗口后 15s 必现 `Client shutdown from post-main` 崩溃报告（post-main 看门狗），退出码 `-8` |
+| 正常退出（本版） | 关窗口后日志依次出现 `client exited, stopping the mcctl server`、`exiting the JVM so the post-main shutdown watchdog cannot fire`；进程退出码 `0`，`crash-reports/` 不新增文件 |
 
 其它验证：
 
@@ -270,9 +274,20 @@ mcctl                      命令行封装脚本
 * `F3` 单独按可以切换调试信息，但 `F3+X` 组合键（如 `F3+G` 区块边界）不生效——原版这段逻辑在
   私有的 `KeyboardHandler#keyPress` 里，本模组只公开复刻了 `F3` 的开关行为。
 * 游戏内滚轮走反射调用 `MouseHandler#onScroll`；若将来版本改名，`mouse scroll` 会静默失效（其他命令不受影响）。
-* `com.sun.net.httpserver` 的 `HTTP-Dispatcher` 线程不是 daemon 线程：关游戏时主线程返回后 JVM 被它拖着，
-  Minecraft 的退出看门狗会写一份 `Client shutdown from post-main` 崩溃报告（游戏本身已经存档完毕、
-  进程随后被看门狗强制结束，不影响使用）。要彻底消掉这个报告需要自己实现 HTTP 循环或监听客户端退出事件。
+
+### 退出时不再写崩溃报告
+
+关游戏时渲染线程返回后，`Main` 会启动一个 post-main 看门狗：15 秒内 JVM 还没结束，它就写一份
+`Client shutdown from post-main` 崩溃报告，然后 `System.exit(-8)`。而 JVM 只有**所有非 daemon 线程**都结束后
+才会自己退出——`com.sun.net.httpserver` 每个服务都带一个非 daemon 的 `HTTP-Dispatcher` 线程（本模组一个，
+AdvancedInfoFetcher 之类的模组还会再有一个），Baritone 也留着非 daemon 的 worker pool。
+JVM 关闭钩子救不了这个场景：JVM 根本没开始关闭，钩子不会执行。
+
+`ClientExitWatcher` 在渲染线程（`Minecraft#getRunningThread()`）上 `join()`，线程结束后先停掉本模组的 HTTP 服务
+（`HttpServer#stop(0)`），再显式 `System.exit(0)`。关闭钩子照常执行（Minecraft 自己的那个也在内），
+所以看门狗永远不会触发；这时世界早已保存、窗口早已关闭（`exitWorldAndClose()` 在 `main()` 返回前就跑完了），
+强制退出不会丢存档。既不依赖 Fabric API 的生命周期事件（本模组依旧只依赖 Fabric Loader），
+也不用自己实现 HTTP 循环。
 
 ## 构建
 
