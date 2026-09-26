@@ -191,7 +191,7 @@ GUI：427x240           # GUI 缩放尺寸
   （实测：窗口在 (653,515)/854x480，把指针扔到 (200,200) 或 (2100,1300)，`/mouse` 都还报 `427,240`）。
 * 判断用的是 `GLFW.glfwGetWindowAttrib(window, GLFW_HOVERED)`，语义就是「光标是否在窗口内容区上方」，
   **X11 / Wayland / Windows / macOS 各后端都由 GLFW 统一实现，代码里没有任何平台分支**
-  （实机验证只在 Linux/X11 做过，见下面的「已知限制」）。
+  （Linux 上的 MC 固定走 X11/Xwayland，实测也只做过这一条；详见下面的「已知限制」）。
   不用 `glfwGetCursorPos` 是因为它有平台差异：X11 会返回负数/超界坐标，Wayland 客户端根本拿不到全局指针位置。
 * **界面开着时**（`抓取：否`）`mouse goto <x> <y>` 把光标放到窗口像素坐标，可以直接对着 `/prtsc` 截图量出来的
   位置点：`mouse goto 325 123` + `mouse left` 可以放在同一个请求里。指针在窗口外时也照样管用——
@@ -338,22 +338,22 @@ mcctl                      命令行封装脚本
   （真 X11 下光标照样会动，只是同一请求里的点击可能用到旧坐标）；`/mouse` 读的是公开的 `xpos()`，不受影响。
 * 界面里的相对移动 `mouse move` 依赖 GLFW 的光标回调；Xwayland 下 warp 不保证产生回调，所以 GUI 定位请用
   绝对坐标的 `mouse goto`，一次请求只放一个光标移动。
-* **平台验证：只在 Linux + X11/Xwayland 上实测过，Windows / macOS / Wayland 原生都未测试。**
-  `/mouse` 的「不在窗口内」判断用 `GLFW_HOVERED`、定位用 `glfwSetCursorPos` + 反射同步，两者都是 GLFW
-  的跨平台接口，代码里没有任何平台分支，但上面这些行为没有在别的平台上跑过：
-  * **Wayland 原生：当前环境跑不起来，没法实测。** Minecraft 26.2 默认就把 GLFW 钉在 X11
-    （`GLX` 里 `glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11)`），要用
-    `-DMC_DEBUG_ENABLED=true -DMC_DEBUG_PREFER_WAYLAND=true` 才会走 Wayland。加上这两个参数后
-    MC 确实用上了 Wayland（`libwayland-client` / `libxkbcommon` / `libdecor` 都已加载，Xwayland 上
-    不再有窗口），但**渲染线程卡死在 `glfwSwapBuffers`**（`Minecraft.renderFrame` → `GlSurface.present`），
-    启动到打开存档时就冻住：客户端线程不再处理 `Minecraft.execute`，`/mouse` 只会返回
-    `the client thread did not answer within 5000 ms`（等 2 分钟也不恢复，也没有崩溃报告）。
-    另外按 GLFW 源码，Wayland 后端**不支持** `glfwSetCursorPos`（会报 `GLFW_FEATURE_UNAVAILABLE`），
-    真要能跑起来时 `mouse goto` 也只有反射同步的位置生效（点击能命中、物理指针不动），
-    `GLFW_HOVERED` 走 `wl_pointer.enter/leave`，预期可用——但都**未经实机验证**。
-  * `GLFW_HOVERED`（指针是否在窗口内容区上方）由 GLFW 各后端统一实现，预期一致；
-  * Windows 的窗口/DPI 缩放、macOS 的坐标原点和 Retina 缩放都可能让「窗口像素」的含义需要复核。
-  换平台后先自测一遍：`GET /mouse` → `mouse goto <x> <y>` → `GET /mouse` 读回坐标 → `mouse left` 是否命中。
+* **平台：Linux 上的 Minecraft 永远跑在 X11/Xwayland 下，所以下面这些功能实际只有这一条路径。**
+  26.2 的 `GLX` 里直接写死 `glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11)`：只要 Wayland 和 X11
+  两个后端都编进来了，且 `DEBUG_PREFER_WAYLAND` 为假，就强制 X11。也就是说**正常情况下不会有原生
+  Wayland 的 MC**（会话是 Wayland 也一样，游戏走 Xwayland），Wayland 那几条结论留档备查，实际意义不大。
+* **Wayland（留档：实测跑不起来）**：用 `-DMC_DEBUG_ENABLED=true -DMC_DEBUG_PREFER_WAYLAND=true`
+  可以强制走 Wayland，实测 MC 确实切过去了（`libwayland-client` / `libxkbcommon` / `libdecor` 都已加载，
+  Xwayland 上不再有窗口），但**渲染线程卡死在 `glfwSwapBuffers`**（`Minecraft.renderFrame` →
+  `GlSurface.present`），启动到打开存档时就冻住：客户端线程不再处理 `Minecraft.execute`，`/mouse` 只会返回
+  `the client thread did not answer within 5000 ms`（等 2 分钟也不恢复，也没有崩溃报告）。
+  另外按 GLFW 源码，Wayland 后端**不支持** `glfwSetCursorPos`（会报 `GLFW_FEATURE_UNAVAILABLE`），
+  真要能跑起来时 `mouse goto` 也只有反射同步的位置生效（点击能命中、物理指针不动），
+  `GLFW_HOVERED` 走 `wl_pointer.enter/leave`，预期可用——但都**未经实机验证**。
+* **其它平台未测试**：Windows / macOS 都没实机跑过。`GLFW_HOVERED`（指针是否在窗口内容区上方）
+  由 GLFW 各后端统一实现，预期一致；Windows 的窗口/DPI 缩放、macOS 的坐标原点和 Retina 缩放都可能让
+  「窗口像素」的含义需要复核。换平台后先自测一遍：
+  `GET /mouse` → `mouse goto <x> <y>` → `GET /mouse` 读回坐标 → `mouse left` 是否命中。
 
 ### 退出时不再写崩溃报告
 
