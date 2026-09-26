@@ -190,7 +190,8 @@ GUI：427x240           # GUI 缩放尺寸
   `MouseHandler#xpos/ypos` 就冻结在最后一个窗口内像素上——看起来像个合法坐标，其实已经不作数了
   （实测：窗口在 (653,515)/854x480，把指针扔到 (200,200) 或 (2100,1300)，`/mouse` 都还报 `427,240`）。
 * 判断用的是 `GLFW.glfwGetWindowAttrib(window, GLFW_HOVERED)`，语义就是「光标是否在窗口内容区上方」，
-  **X11 / Wayland / Windows / macOS 各后端都由 GLFW 统一实现，代码里没有任何平台分支**。
+  **X11 / Wayland / Windows / macOS 各后端都由 GLFW 统一实现，代码里没有任何平台分支**
+  （实机验证只在 Linux/X11 做过，见下面的「已知限制」）。
   不用 `glfwGetCursorPos` 是因为它有平台差异：X11 会返回负数/超界坐标，Wayland 客户端根本拿不到全局指针位置。
 * **界面开着时**（`抓取：否`）`mouse goto <x> <y>` 把光标放到窗口像素坐标，可以直接对着 `/prtsc` 截图量出来的
   位置点：`mouse goto 325 123` + `mouse left` 可以放在同一个请求里。指针在窗口外时也照样管用——
@@ -337,6 +338,14 @@ mcctl                      命令行封装脚本
   （真 X11 下光标照样会动，只是同一请求里的点击可能用到旧坐标）；`/mouse` 读的是公开的 `xpos()`，不受影响。
 * 界面里的相对移动 `mouse move` 依赖 GLFW 的光标回调；Xwayland 下 warp 不保证产生回调，所以 GUI 定位请用
   绝对坐标的 `mouse goto`，一次请求只放一个光标移动。
+* **平台验证：只在 Linux + X11/Xwayland 上实测过，Windows / macOS / Wayland 原生都未测试。**
+  `/mouse` 的「不在窗口内」判断用 `GLFW_HOVERED`、定位用 `glfwSetCursorPos` + 反射同步，两者都是 GLFW
+  的跨平台接口，代码里没有任何平台分支，但上面这些行为没有在别的平台上跑过：
+  * `GLFW_HOVERED`（指针是否在窗口内容区上方）由 GLFW 各后端统一实现，预期一致；
+  * `glfwSetCursorPos` 各平台行为不同——Wayland 原生按协议不允许客户端移动指针，此时预期只有反射同步的
+    `MouseHandler#xpos/ypos` 生效（点击仍能命中，物理指针不动）；
+  * Windows 的窗口/DPI 缩放、macOS 的坐标原点和 Retina 缩放都可能让「窗口像素」的含义需要复核。
+  换平台后先自测一遍：`GET /mouse` → `mouse goto <x> <y>` → `GET /mouse` 读回坐标 → `mouse left` 是否命中。
 
 ### 退出时不再写崩溃报告
 
