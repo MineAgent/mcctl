@@ -429,14 +429,29 @@ public final class McInputExecutor implements InputExecutor {
 		}
 
 		Screen screen = minecraft.gui.screen();
-		return new StringBuilder()
-				.append("光标：").append(decimal(mouse.xpos())).append(' ').append(decimal(mouse.ypos())).append('\n')
-				.append("缩放：").append(decimal(mouse.getScaledXPos(window))).append(' ')
-				.append(decimal(mouse.getScaledYPos(window))).append('\n')
+		boolean grabbed = mouse.isMouseGrabbed();
+
+		// GLFW only delivers cursor motion while the pointer is over the content area, so once it
+		// wanders off the window MouseHandler#xpos/ypos freezes at the last in-window pixel and
+		// looks like a perfectly valid position. GLFW_HOVERED is the portable answer to "is the
+		// cursor over this window" (X11 Enter/Leave, Wayland wl_pointer, Win32, Cocoa), so no
+		// platform check is needed; glfwGetCursorPos would not do (X11 reports out-of-window
+		// coordinates, Wayland cannot know them at all).
+		boolean hovered = GLFW.glfwGetWindowAttrib(window.handle(), GLFW.GLFW_HOVERED) == GLFW.GLFW_TRUE;
+
+		StringBuilder out = new StringBuilder();
+		if (!grabbed && !hovered) {
+			out.append("光标：不在窗口内，请使用 mouse goto <x> <y>\n");
+		} else {
+			out.append("光标：").append(decimal(mouse.xpos())).append(' ').append(decimal(mouse.ypos())).append('\n')
+					.append("缩放：").append(decimal(mouse.getScaledXPos(window))).append(' ')
+					.append(decimal(mouse.getScaledYPos(window))).append('\n');
+		}
+		return out
 				.append("窗口：").append(window.getScreenWidth()).append('x').append(window.getScreenHeight()).append('\n')
 				.append("GUI：").append(window.getGuiScaledWidth()).append('x')
 				.append(window.getGuiScaledHeight()).append('\n')
-				.append("抓取：").append(mouse.isMouseGrabbed() ? "是" : "否").append('\n')
+				.append("抓取：").append(grabbed ? "是" : "否").append('\n')
 				.append("界面：").append(screen == null ? "无" : screen.getClass().getSimpleName()).append('\n')
 				.toString();
 	}

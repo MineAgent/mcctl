@@ -152,7 +152,7 @@ craftcmd 1.1.0 Craft Command
 fabric-api 0.160.0+26.2 Fabric API
 fabricloader 0.19.5 Fabric Loader
 java 25 OpenJDK 64-Bit Server VM
-mcctl 1.5.0 mcctl - Client Connect
+mcctl 1.6.0 mcctl - Client Connect
 minecraft 26.2 Minecraft
 noautopause 1.0.2 noautopause
 ```
@@ -180,8 +180,22 @@ GUI：427x240           # GUI 缩放尺寸
 界面：CraftingScreen   # 当前打开的界面类名；无 = 在世界里
 ```
 
-* **界面开着时**（`抓取：否`）读到的就是真实光标，`mouse goto <x> <y>` 把光标放到窗口像素坐标，
-  可以直接对着 `/prtsc` 截图量出来的位置点：`mouse goto 325 123` + `mouse left` 可以放在同一个请求里。
+指针被移到窗口外时，`光标` / `缩放` 两行会换成：
+
+```
+光标：不在窗口内，请使用 mouse goto <x> <y>
+```
+
+* 为什么需要这一行：GLFW **只在指针位于窗口内容区上方时**才投递移动事件，所以指针一旦离开窗口,
+  `MouseHandler#xpos/ypos` 就冻结在最后一个窗口内像素上——看起来像个合法坐标，其实已经不作数了
+  （实测：窗口在 (653,515)/854x480，把指针扔到 (200,200) 或 (2100,1300)，`/mouse` 都还报 `427,240`）。
+* 判断用的是 `GLFW.glfwGetWindowAttrib(window, GLFW_HOVERED)`，语义就是「光标是否在窗口内容区上方」，
+  **X11 / Wayland / Windows / macOS 各后端都由 GLFW 统一实现，代码里没有任何平台分支**。
+  不用 `glfwGetCursorPos` 是因为它有平台差异：X11 会返回负数/超界坐标，Wayland 客户端根本拿不到全局指针位置。
+* **界面开着时**（`抓取：否`）`mouse goto <x> <y>` 把光标放到窗口像素坐标，可以直接对着 `/prtsc` 截图量出来的
+  位置点：`mouse goto 325 123` + `mouse left` 可以放在同一个请求里。指针在窗口外时也照样管用——
+  绝对定位是自纠正的，会把指针一起拉回窗口内（实测从窗口外 `goto 321 202`，物理指针回到 `(974,717)` =
+  窗口原点 `(653,515)` + 目标，点击命中）。
 * **在世界里**（`抓取：是`）GLFW 把光标禁用了，`mouse goto` 不生效（转视角要用 `mouse move`），
   `/mouse` 报告的只是窗口中心。
 * 坐标会被夹到窗口范围内（`0..窗口-1`）。
@@ -213,11 +227,11 @@ MCCTL_URL=http://127.0.0.1:3420 ./mcctl F3
 所以 Loom 不需要任何 mappings 配置（`build.gradle` 里没有 `mappings` 行）。
 
 ```bash
-./gradlew build          # 产物: build/libs/mcctl-1.5.0.jar
+./gradlew build          # 产物: build/libs/mcctl-1.6.0.jar
 ./gradlew runClient      # 直接启动带模组的客户端（需要正版登录/开发环境配置）
 ```
 
-安装：把 `build/libs/mcctl-1.5.0.jar` 丢进 `.minecraft/mods/`，
+安装：把 `build/libs/mcctl-1.6.0.jar` 丢进 `.minecraft/mods/`，
 再装 Fabric Loader 0.19.5+（不需要 Fabric API）。启动后日志里会出现：
 
 ```
@@ -269,7 +283,7 @@ mcctl                      命令行封装脚本
 
 | 测试 | 结果 |
 | --- | --- |
-| 启动 | 日志出现 `mcctl 1.5.0`，`ss -ltn` 看到 `127.0.0.1:3420` 在监听 |
+| 启动 | 日志出现 `mcctl 1.6.0`，`ss -ltn` 看到 `127.0.0.1:3420` 在监听 |
 | `GET /` | 200，返回完整中文说明 |
 | `GET /prtsc` | 200 `image/png`，854x480（窗口原生分辨率）、306KB、0.14s；画面就是存档里的丛林场景 |
 | `W 1500` | 截图对比：玩家确实往前走了一段 |
@@ -289,6 +303,7 @@ mcctl                      命令行封装脚本
 | `mouse goto 321 202` + `mouse left`（同一请求） | 点中暂停菜单的「进度」按钮，`界面：AdvancementsScreen` |
 | `mouse goto 427 154` + `mouse left` | 点中「回到游戏」，回到世界（`抓取：是`、`界面：无`）；分成两个请求也成立 |
 | `mouse goto 9999 9999` | 夹到窗口边界：`光标：853.0 479.0` |
+| 光标被移到窗口外 | 窗口在 (653,515)/854x480，指针扔到 (200,200) 或 (2100,1300) 后 `/mouse` 输出 `光标：不在窗口内，请使用 mouse goto <x> <y>`；此时 `mouse left` 用旧值点不中，`mouse goto 321 202` + `mouse left` 命中（`界面：AdvancementsScreen`），物理指针回到 (974,717) |
 | `mouse move +50 +30`（界面里，已知起点） | 从 300,300 移到 350,330，读回稳定 |
 | 正常退出（旧行为） | 关窗口后 15s 必现 `Client shutdown from post-main` 崩溃报告（post-main 看门狗），退出码 `-8` |
 | 正常退出（本版） | 关窗口后日志依次出现 `client exited, stopping the mcctl server`、`exiting the JVM so the post-main shutdown watchdog cannot fire`；进程退出码 `0`，`crash-reports/` 不新增文件 |
@@ -306,6 +321,7 @@ mcctl                      命令行封装脚本
   `handleGlobalKeyPress` 的顺序、`Screenshot.takeScreenshot(RenderTarget, Consumer<NativeImage>)`、
   `MouseHandler#xpos/getScaledXPos/isMouseGrabbed`、`MouseHandler#releaseMouse` 里 `glfwSetCursorPos`
   之后直接写 `xpos/ypos` 的做法、`AbstractContainerScreen#mouseClicked` 用事件坐标找格子，
+  `GLFW#glfwGetWindowAttrib(GLFW_HOVERED)` 判断指针是否在窗口内容区上方（跨平台），
   `ClientPacketListener#sendChat/sendCommand`，以及 Baritone 的
   `BaritoneAPI#getProvider → IBaritoneProvider#getPrimaryBaritone → IBaritone#getCommandManager → ICommandManager#execute`。
 
