@@ -275,6 +275,7 @@ src/main/java/com/example/mcctl/
 tools/VerifyServer.java    脱离游戏验证 HTTP + 解析层（假执行器）
 tools/LoaderSmokeTest.java 用真实 26.2 运行期 classpath 验证入口点 + HTTP 服务
 mcctl                      命令行封装脚本
+Wayland.md                 Wayland 相关的调查留档（平台结论见「已知限制」）
 ```
 
 ## 验证情况
@@ -338,18 +339,11 @@ mcctl                      命令行封装脚本
   （真 X11 下光标照样会动，只是同一请求里的点击可能用到旧坐标）；`/mouse` 读的是公开的 `xpos()`，不受影响。
 * 界面里的相对移动 `mouse move` 依赖 GLFW 的光标回调；Xwayland 下 warp 不保证产生回调，所以 GUI 定位请用
   绝对坐标的 `mouse goto`，一次请求只放一个光标移动。
-* **平台：Linux 上的 Minecraft 永远跑在 X11/Xwayland 下，所以下面这些功能实际只有这一条路径。**
-  26.2 的 `GLX` 里直接写死 `glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11)`：只要 Wayland 和 X11
-  两个后端都编进来了，且 `DEBUG_PREFER_WAYLAND` 为假，就强制 X11。也就是说**正常情况下不会有原生
-  Wayland 的 MC**（会话是 Wayland 也一样，游戏走 Xwayland），Wayland 那几条结论留档备查，实际意义不大。
-* **Wayland（留档：实测跑不起来）**：用 `-DMC_DEBUG_ENABLED=true -DMC_DEBUG_PREFER_WAYLAND=true`
-  可以强制走 Wayland，实测 MC 确实切过去了（`libwayland-client` / `libxkbcommon` / `libdecor` 都已加载，
-  Xwayland 上不再有窗口），但**渲染线程卡死在 `glfwSwapBuffers`**（`Minecraft.renderFrame` →
-  `GlSurface.present`），启动到打开存档时就冻住：客户端线程不再处理 `Minecraft.execute`，`/mouse` 只会返回
-  `the client thread did not answer within 5000 ms`（等 2 分钟也不恢复，也没有崩溃报告）。
-  另外按 GLFW 源码，Wayland 后端**不支持** `glfwSetCursorPos`（会报 `GLFW_FEATURE_UNAVAILABLE`），
-  真要能跑起来时 `mouse goto` 也只有反射同步的位置生效（点击能命中、物理指针不动），
-  `GLFW_HOVERED` 走 `wl_pointer.enter/leave`，预期可用——但都**未经实机验证**。
+* **平台：Linux 上的 Minecraft 永远跑在 X11/Xwayland 下**，所以 `/mouse`、`mouse goto` 实际只有这一条
+  路径。26.2 在 `GLX` 里写死 `glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11)`：只要 Wayland 和 X11
+  两个后端都编进来了、且 `DEBUG_PREFER_WAYLAND` 为假，就强制 X11——会话是 Wayland 也一样，游戏走
+  Xwayland。**Wayland 相关的调查（怎么强制、为什么跑不起来、GLFW 各后端的差异）全部收在
+  [`Wayland.md`](Wayland.md)**，这里只留结论。
 * **其它平台未测试**：Windows / macOS 都没实机跑过。`GLFW_HOVERED`（指针是否在窗口内容区上方）
   由 GLFW 各后端统一实现，预期一致；Windows 的窗口/DPI 缩放、macOS 的坐标原点和 Retina 缩放都可能让
   「窗口像素」的含义需要复核。换平台后先自测一遍：
