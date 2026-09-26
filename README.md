@@ -341,9 +341,17 @@ mcctl                      命令行封装脚本
 * **平台验证：只在 Linux + X11/Xwayland 上实测过，Windows / macOS / Wayland 原生都未测试。**
   `/mouse` 的「不在窗口内」判断用 `GLFW_HOVERED`、定位用 `glfwSetCursorPos` + 反射同步，两者都是 GLFW
   的跨平台接口，代码里没有任何平台分支，但上面这些行为没有在别的平台上跑过：
+  * **Wayland 原生：当前环境跑不起来，没法实测。** Minecraft 26.2 默认就把 GLFW 钉在 X11
+    （`GLX` 里 `glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11)`），要用
+    `-DMC_DEBUG_ENABLED=true -DMC_DEBUG_PREFER_WAYLAND=true` 才会走 Wayland。加上这两个参数后
+    MC 确实用上了 Wayland（`libwayland-client` / `libxkbcommon` / `libdecor` 都已加载，Xwayland 上
+    不再有窗口），但**渲染线程卡死在 `glfwSwapBuffers`**（`Minecraft.renderFrame` → `GlSurface.present`），
+    启动到打开存档时就冻住：客户端线程不再处理 `Minecraft.execute`，`/mouse` 只会返回
+    `the client thread did not answer within 5000 ms`（等 2 分钟也不恢复，也没有崩溃报告）。
+    另外按 GLFW 源码，Wayland 后端**不支持** `glfwSetCursorPos`（会报 `GLFW_FEATURE_UNAVAILABLE`），
+    真要能跑起来时 `mouse goto` 也只有反射同步的位置生效（点击能命中、物理指针不动），
+    `GLFW_HOVERED` 走 `wl_pointer.enter/leave`，预期可用——但都**未经实机验证**。
   * `GLFW_HOVERED`（指针是否在窗口内容区上方）由 GLFW 各后端统一实现，预期一致；
-  * `glfwSetCursorPos` 各平台行为不同——Wayland 原生按协议不允许客户端移动指针，此时预期只有反射同步的
-    `MouseHandler#xpos/ypos` 生效（点击仍能命中，物理指针不动）；
   * Windows 的窗口/DPI 缩放、macOS 的坐标原点和 Retina 缩放都可能让「窗口像素」的含义需要复核。
   换平台后先自测一遍：`GET /mouse` → `mouse goto <x> <y>` → `GET /mouse` 读回坐标 → `mouse left` 是否命中。
 
