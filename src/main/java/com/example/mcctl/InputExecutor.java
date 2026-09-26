@@ -19,6 +19,15 @@ public interface InputExecutor {
 	/** Relative mouse movement in pixels (positive dy = down). */
 	void mouseMove(int dx, int dy);
 
+	/**
+	 * Moves the mouse cursor to an absolute window-pixel position.
+	 *
+	 * <p>Window pixels are the space {@code GET /mouse} reports and {@code /prtsc} screenshots use.
+	 * It only does something while a screen is open: in the world the cursor is grabbed by the game
+	 * (use {@link #mouseMove} there).</p>
+	 */
+	void mouseGoto(int x, int y);
+
 	/** Wheel scroll; positive = up. */
 	void mouseScroll(double amount);
 
@@ -60,6 +69,14 @@ public interface InputExecutor {
 	 * @throws Exception when the capture failed or timed out
 	 */
 	byte[] captureScreenshot() throws Exception;
+
+	/**
+	 * Current mouse cursor state as plain text (the body of {@code GET /mouse}).
+	 *
+	 * @return one {@code "<field>：<value>"} line per field; never {@code null}
+	 * @throws IllegalStateException when the game is not running or the client thread did not answer
+	 */
+	String mousePosition();
 
 	/**
 	 * All mods currently loaded by Fabric Loader.

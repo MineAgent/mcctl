@@ -14,8 +14,8 @@ import java.util.List;
  * @param message     chat text for {@link Kind#CHAT} (Baritone commands arrive as {@code #...})
  * @param holdMs      how long keys/buttons are held down
  * @param delayMs     how long to sleep before performing this action
- * @param dx          horizontal mouse delta in pixels
- * @param dy          vertical mouse delta in pixels (positive = down, like GLFW)
+ * @param dx          horizontal mouse delta in pixels, or the absolute x for {@link Kind#MOUSE_GOTO}
+ * @param dy          vertical mouse delta in pixels (positive = down, like GLFW), or the absolute y
  * @param amount      scroll amount (positive = wheel up)
  */
 public record Action(Kind kind, List<String> keys, String button, String message, long holdMs, long delayMs,
@@ -28,6 +28,8 @@ public record Action(Kind kind, List<String> keys, String button, String message
 		MOUSE_BUTTON,
 		/** move the mouse/camera by a pixel delta */
 		MOUSE_MOVE,
+		/** move the mouse cursor to an absolute window-pixel position (screen open only) */
+		MOUSE_GOTO,
 		/** turn the mouse wheel */
 		MOUSE_SCROLL,
 		/** send a chat message (Baritone commands start with '#') */
@@ -54,6 +56,11 @@ public record Action(Kind kind, List<String> keys, String button, String message
 
 	public static Action mouseMove(int dx, int dy, long delayMs) {
 		return new Action(Kind.MOUSE_MOVE, null, null, null, 0, delayMs, dx, dy, 0.0);
+	}
+
+	/** Absolute cursor position in window pixels; only meaningful while a screen is open. */
+	public static Action mouseGoto(int x, int y, long delayMs) {
+		return new Action(Kind.MOUSE_GOTO, null, null, null, 0, delayMs, x, y, 0.0);
 	}
 
 	public static Action mouseScroll(double amount, long delayMs) {
@@ -87,6 +94,7 @@ public record Action(Kind kind, List<String> keys, String button, String message
 			case KEYS -> String.join("+", keys) + (holdMs > 0 ? " " + holdMs : "");
 			case MOUSE_BUTTON -> "mouse " + button + (holdMs > 0 ? " " + holdMs : "");
 			case MOUSE_MOVE -> "mouse move " + signed(dx) + " " + signed(dy);
+			case MOUSE_GOTO -> "mouse goto " + dx + " " + dy;
 			case MOUSE_SCROLL -> "mouse scroll " + (amount == Math.rint(amount)
 					? String.valueOf((long) amount) : String.valueOf(amount));
 			case CHAT -> message != null && message.startsWith("#")

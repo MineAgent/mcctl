@@ -18,6 +18,7 @@ import java.util.regex.Pattern;
  * mouse left            left click
  * mouse left 500        hold left mouse button for 500 ms
  * mouse move +30 -80    move the mouse 30 px right and 80 px up
+ * mouse goto 325 123    put the cursor at window pixel (325, 123) - only with a screen open
  * mouse scroll 3        scroll the wheel up 3 notches
  * delay 80 W 50         wait 80 ms, then hold W for 50 ms
  * release               release everything that is currently held
@@ -215,7 +216,8 @@ public final class CommandParser {
 	private static void parseMouse(String[] token, int lineNo, long delay, List<Action> out)
 			throws CommandException {
 		if (token.length < 2) {
-			throw new CommandException(lineNo, "'mouse' needs an argument: left | right | mid | move | scroll");
+			throw new CommandException(lineNo,
+					"'mouse' needs an argument: left | right | mid | move | goto | scroll");
 		}
 
 		String sub = token[1].toLowerCase(Locale.ROOT);
@@ -229,6 +231,17 @@ public final class CommandParser {
 				int dy = parseInt(token[3], lineNo, "mouse dy");
 				requireEnd(token, 4, lineNo, "mouse move");
 				out.add(Action.mouseMove(dx, dy, delay));
+			}
+			case "goto", "at", "position" -> {
+				// Absolute cursor position in window pixels (the space GET /mouse reports and the
+				// screenshots use); it only does something while a screen is open.
+				if (token.length < 4) {
+					throw new CommandException(lineNo, "'mouse goto' needs two integers: x y");
+				}
+				int x = parseInt(token[2], lineNo, "mouse x");
+				int y = parseInt(token[3], lineNo, "mouse y");
+				requireEnd(token, 4, lineNo, "mouse goto");
+				out.add(Action.mouseGoto(x, y, delay));
 			}
 			case "scroll", "wheel" -> {
 				double amount = 1.0;

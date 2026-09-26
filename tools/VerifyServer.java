@@ -35,9 +35,23 @@ public final class VerifyServer {
 		@Override public void mouseButtonDown(String b) { add("mouseDown " + b); }
 		@Override public void mouseButtonUp(String b) { add("mouseUp " + b); }
 		@Override public void mouseMove(int dx, int dy) { add("mouseMove " + dx + " " + dy); }
+		@Override public void mouseGoto(int x, int y) { add("mouseGoto " + x + " " + y); }
 		@Override public void mouseScroll(double a) { add("mouseScroll " + a); }
 		@Override public void releaseAll() { add("releaseAll"); }
 		@Override public void sendChat(String m) { add("chat " + m); }
+		@Override public String typeText(String text) { add("typeText " + text); return null; }
+		@Override public String typeEnter() { add("typeEnter"); return null; }
+
+		@Override
+		public String mousePosition() {
+			add("mousePosition");
+			return "光标：325.0 123.0\n"
+					+ "缩放：162.5 61.5\n"
+					+ "窗口：854x480\n"
+					+ "GUI：427x240\n"
+					+ "抓取：否\n"
+					+ "界面：CraftingScreen\n";
+		}
 
 		@Override
 		public String loadedMods() {
@@ -94,6 +108,8 @@ public final class VerifyServer {
 		expect("mouse right 10", "mouse right 10");
 		expect("mouse move +30 -80", "mouse move +30 -80");
 		expect("mouse move -5 5", "mouse move -5 +5");
+		expect("mouse goto 325 123", "mouse goto 325 123");
+		expect("mouse goto 0 0", "mouse goto 0 0");
 		expect("mouse scroll 3", "mouse scroll 3");
 		expect("delay 80 W 50", "delay 80 W 50");
 		expect("delay 10 delay 20 A 5", "delay 30 A 5");
@@ -117,6 +133,8 @@ public final class VerifyServer {
 		reject("XYZ");
 		reject("mouse banana");
 		reject("mouse move 5");
+		reject("mouse goto 5");
+		reject("mouse goto a b");
 		reject("delay 80");
 		reject("W 100 abc");
 		reject("W -5");

@@ -92,6 +92,16 @@ public final class ControlServer {
 				return;
 			}
 
+			if (isMousePath(path)) {
+				if (!"GET".equals(method) && !"HEAD".equals(method) && !"POST".equals(method)) {
+					exchange.getResponseHeaders().set("Allow", "GET, HEAD, POST, OPTIONS");
+					respond(exchange, 405, "text/plain; charset=utf-8", "method not allowed: " + method + "\n");
+					return;
+				}
+				handleMouse(exchange);
+				return;
+			}
+
 			switch (method) {
 				case "GET", "HEAD" -> respond(exchange, 200, "text/plain; charset=utf-8", Help.text());
 				case "POST" -> handlePost(exchange);
@@ -122,6 +132,30 @@ public final class ControlServer {
 
 	private static boolean isModsPath(String path) {
 		return "/mods".equals(path) || "/mods.txt".equals(path) || "/modlist".equals(path);
+	}
+
+	private static boolean isMousePath(String path) {
+		return "/mouse".equals(path) || "/mouse.txt".equals(path) || "/cursor".equals(path);
+	}
+
+	/** {@code GET /mouse}: where the cursor is right now (window pixels + GUI-scaled units). */
+	private void handleMouse(HttpExchange exchange) throws IOException {
+		if (!executor.isReady()) {
+			respond(exchange, 409, "text/plain; charset=utf-8",
+					"game not ready: " + executor.unavailableReason() + "\n");
+			return;
+		}
+
+		String mouse;
+		try {
+			mouse = executor.mousePosition();
+		} catch (RuntimeException e) {
+			LOG.log(Level.WARNING, "mouse position failed", e);
+			respond(exchange, 500, "text/plain; charset=utf-8", "mouse position failed: " + e + "\n");
+			return;
+		}
+
+		respond(exchange, 200, "text/plain; charset=utf-8", mouse == null ? "" : mouse);
 	}
 
 	/** {@code GET /mods}: every loaded mod as {@code "<id> <version> <name>"} lines. */

@@ -6,6 +6,7 @@
 * `POST /` → 用纯文本命令操作游戏（按键、鼠标、视角、滚轮）
 * `GET /prtsc` → 截取当前游戏画面，直接返回 PNG 图片
 * `GET /mods` → 列出所有已加载模组的 ID、版本、名称（纯文本）
+* `GET /mouse` → 当前鼠标光标位置（窗口像素 + GUI 缩放坐标，纯文本）
 
 命令在主线程（渲染线程）执行，走的是原版输入管线（`KeyMapping` / `Screen` 事件），
 不抢占真实键鼠，也不会被反作弊当成外挂注入（这是客户端本地模组）。
@@ -15,11 +16,13 @@ curl -X POST --data-binary 'W 100'              http://127.0.0.1:3420
 curl -X POST --data-binary 'W+Ctrl 100'         http://127.0.0.1:3420
 curl -X POST --data-binary 'mouse left'         http://127.0.0.1:3420
 curl -X POST --data-binary 'mouse move +30 -80' http://127.0.0.1:3420
+curl -X POST --data-binary 'mouse goto 325 123' http://127.0.0.1:3420   # 光标移到像素坐标
 curl -X POST --data-binary 'mouse mid'          http://127.0.0.1:3420
 curl -X POST --data-binary 'delay 80 W 50'      http://127.0.0.1:3420
 curl -X POST --data-binary 'bt goal ~ ~ ~20'    http://127.0.0.1:3420   # Baritone
 curl -o shot.png http://127.0.0.1:3420/prtsc    # 截图（PNG）
 curl http://127.0.0.1:3420/mods                 # 已加载模组列表
+curl http://127.0.0.1:3420/mouse                # 当前光标位置
 ```
 
 ## 命令语法
@@ -30,6 +33,7 @@ curl http://127.0.0.1:3420/mods                 # 已加载模组列表
 | `<按键>+<按键>+... [时长ms]` | 同时按住多个键，例如 `W+Ctrl 100` |
 | `mouse left\|right\|mid [时长ms]` | 鼠标左/右/中键（默认 50ms） |
 | `mouse move <dx> <dy>` | 相对移动鼠标/视角（像素；+右 +下，-左 -上） |
+| `mouse goto <x> <y>` | 把光标移到窗口像素坐标（`GET /mouse` / 截图那套坐标；界面开着时才有意义） |
 | `mouse scroll <数值>` | 滚轮（正数向上） |
 | `delay <ms> <命令>` | 收到请求后先等 `ms` 毫秒再执行 |
 | `release` | 立刻松开所有按键/鼠标 |
@@ -148,7 +152,7 @@ craftcmd 1.1.0 Craft Command
 fabric-api 0.160.0+26.2 Fabric API
 fabricloader 0.19.5 Fabric Loader
 java 25 OpenJDK 64-Bit Server VM
-mcctl 1.4.0 mcctl - Client Connect
+mcctl 1.5.0 mcctl - Client Connect
 minecraft 26.2 Minecraft
 noautopause 1.0.2 noautopause
 ```
@@ -157,6 +161,34 @@ noautopause 1.0.2 noautopause
 
 > **玩家信息（坐标/方位/背包）已拆到独立模组** [AdvancedInfoFetcher](https://github.com/MineAgent/AdvancedInfoFetcher)：
 > 监听 `127.0.0.1:3421`，`GET /info` 返回坐标/方位/背包/副手/盔甲，和 mcctl 可以同时装。
+
+### 鼠标位置接口 `GET /mouse` 与 `mouse goto`
+
+```bash
+curl http://127.0.0.1:3420/mouse
+curl -X POST --data-binary 'mouse goto 325 123' http://127.0.0.1:3420
+```
+
+`GET /mouse`（别名 `/cursor`、`/mouse.txt`）返回 `200 text/plain`，每行 `<字段>：<值>`：
+
+```
+光标：325.0 123.0      # 窗口像素坐标，和 /prtsc 截图、mouse move 的位移同一坐标系
+缩放：162.5 61.5       # GUI 缩放坐标（Screen 事件用的那套）
+窗口：854x480          # 窗口像素尺寸
+GUI：427x240           # GUI 缩放尺寸
+抓取：否               # 是 = 鼠标被游戏锁住（在世界里），此时光标停在窗口中心，位置没有意义
+界面：CraftingScreen   # 当前打开的界面类名；无 = 在世界里
+```
+
+* **界面开着时**（`抓取：否`）读到的就是真实光标，`mouse goto <x> <y>` 把光标放到窗口像素坐标，
+  可以直接对着 `/prtsc` 截图量出来的位置点：`mouse goto 325 123` + `mouse left` 可以放在同一个请求里。
+* **在世界里**（`抓取：是`）GLFW 把光标禁用了，`mouse goto` 不生效（转视角要用 `mouse move`），
+  `/mouse` 报告的只是窗口中心。
+* 坐标会被夹到窗口范围内（`0..窗口-1`）。
+* 一次请求里只放一个光标移动：GLFW 把新位置回传是异步的，同一 tick 里的第二次 `glfwSetCursorPos`
+  在 Xwayland 下会丢。`mouse goto` + `mouse left`（同一请求）没问题，两个移动叠在一起不要写。
+* **手点 GUI 只是兜底手段**：界面按钮优先 `TAB`/`ENTER`，格子操作优先 Craft Command 的
+  `/craft` `/furnace` `/chest` `/inventory`。`/mouse` + `mouse goto` 是在**没有 Craft Command** 时才用的。
 
 ## 命令行工具
 
@@ -181,11 +213,11 @@ MCCTL_URL=http://127.0.0.1:3420 ./mcctl F3
 所以 Loom 不需要任何 mappings 配置（`build.gradle` 里没有 `mappings` 行）。
 
 ```bash
-./gradlew build          # 产物: build/libs/mcctl-1.4.0.jar
+./gradlew build          # 产物: build/libs/mcctl-1.5.0.jar
 ./gradlew runClient      # 直接启动带模组的客户端（需要正版登录/开发环境配置）
 ```
 
-安装：把 `build/libs/mcctl-1.4.0.jar` 丢进 `.minecraft/mods/`，
+安装：把 `build/libs/mcctl-1.5.0.jar` 丢进 `.minecraft/mods/`，
 再装 Fabric Loader 0.19.5+（不需要 Fabric API）。启动后日志里会出现：
 
 ```
@@ -205,6 +237,8 @@ mcctl listening on http://127.0.0.1:3420
 | 打开界面时 | 键盘/鼠标事件转发给当前 `Screen`，所以在背包里也能点格子、按 `E` 关闭 |
 | `/prtsc` 截图 | `Screenshot.takeScreenshot(gameRenderer.mainRenderTarget(), image -> ...)` 取帧，`NativeImage.writeToFile` 编码成 PNG 后读回内存返回（临时文件用完即删） |
 | `/mods` | `FabricLoader#getAllMods()` → `ModMetadata#getId/getVersion/getName`，按 ID 排序，输出 `<id> <version> <name>` |
+| `/mouse` | `MouseHandler#xpos/ypos`（窗口像素）+ `getScaledXPos/YPos`（GUI 缩放）+ `isMouseGrabbed` + `Window` 尺寸 + 当前 `Screen` 类名，全部在渲染线程读 |
+| `mouse goto` | `GLFW.glfwSetCursorPos(窗口像素)`；随后反射同步 `MouseHandler#xpos/ypos`（复刻 `MouseHandler#releaseMouse` 的做法），否则同一请求里紧接着的点击会用旧坐标 |
 | 关游戏 | `ClientExitWatcher` 守候渲染线程（`Minecraft#getRunningThread()`）；线程结束后停掉本模组的 HTTP 服务并 `System.exit(0)`，赶在 post-main 看门狗写报告之前结束 JVM |
 
 线程模型：HTTP 线程 → 单线程队列（保证顺序）→ `Minecraft.execute()` 到渲染线程执行输入。
@@ -235,7 +269,7 @@ mcctl                      命令行封装脚本
 
 | 测试 | 结果 |
 | --- | --- |
-| 启动 | 日志出现 `mcctl 1.4.0`，`ss -ltn` 看到 `127.0.0.1:3420` 在监听 |
+| 启动 | 日志出现 `mcctl 1.5.0`，`ss -ltn` 看到 `127.0.0.1:3420` 在监听 |
 | `GET /` | 200，返回完整中文说明 |
 | `GET /prtsc` | 200 `image/png`，854x480（窗口原生分辨率）、306KB、0.14s；画面就是存档里的丛林场景 |
 | `W 1500` | 截图对比：玩家确实往前走了一段 |
@@ -249,20 +283,29 @@ mcctl                      命令行封装脚本
 | `GET /mods` | `200 text/plain`；列出 57 个已加载模组（含 Fabric API 子模块、`minecraft`、`java`），格式 `<id> <version> <name>` 按 ID 排序 |
 | `/mods` 别名 | `/modlist`、`/mods.txt` 都返回同样的列表；`./mcctl mods` 输出一致 |
 | `delay 200 mouse move 0 +120` + 多行脚本 | 按顺序执行，JSON 回显规范化后的命令 |
+| `GET /mouse`（世界里） | `光标：427.0 240.0`、`抓取：是`、`界面：无`（854x480，GUI 427x240） |
+| `GET /mouse`（暂停菜单） | `ESC` 后 `抓取：否`、`界面：PauseScreen`，光标回到窗口中心 |
+| `mouse goto 100 100` | 读回 `光标：100.0 100.0`、`缩放：50.0 50.0` |
+| `mouse goto 321 202` + `mouse left`（同一请求） | 点中暂停菜单的「进度」按钮，`界面：AdvancementsScreen` |
+| `mouse goto 427 154` + `mouse left` | 点中「回到游戏」，回到世界（`抓取：是`、`界面：无`）；分成两个请求也成立 |
+| `mouse goto 9999 9999` | 夹到窗口边界：`光标：853.0 479.0` |
+| `mouse move +50 +30`（界面里，已知起点） | 从 300,300 移到 350,330，读回稳定 |
 | 正常退出（旧行为） | 关窗口后 15s 必现 `Client shutdown from post-main` 崩溃报告（post-main 看门狗），退出码 `-8` |
 | 正常退出（本版） | 关窗口后日志依次出现 `client exited, stopping the mcctl server`、`exiting the JVM so the post-main shutdown watchdog cannot fire`；进程退出码 `0`，`crash-reports/` 不新增文件 |
 
 其它验证：
 
 * `./gradlew build` 干净构建通过（Loom 1.17.21 / Gradle 9.5.1 / JDK 25）。
-* **解析层**：37 个用例全过（键位、鼠标、`delay`、多行脚本、`bt`/`#`/`chat`、以及 10 种错误输入）；
-  通过 `tools/VerifyServer.java` 起真实 HTTP 服务，用 `curl` 验证 GET 说明 / POST 执行 / 400 / JSON / 命令顺序。
+* **解析层**：41 个用例全过（键位、鼠标、`mouse goto`、`delay`、多行脚本、`bt`/`#`/`chat`、以及 12 种错误输入）；
+  通过 `tools/VerifyServer.java` 起真实 HTTP 服务，用 `curl` 验证 GET 说明 / POST 执行 / `GET /mouse` / 400 / JSON / 命令顺序。
 * **入口点 + 服务**：`tools/LoaderSmokeTest.java` 用打包好的 jar + 真实 26.2 运行期 classpath 加载
   `McCtlClientMod`，确认 `onInitializeClient()` 正常、端口只绑 `127.0.0.1`、无游戏时 POST 与 GET /prtsc 返回 409。
 * **`/prtsc` 传输层**：假执行器返回真 PNG，验证 `200 image/png`、magic number、别名、`HEAD`、`./mcctl prtsc 文件` 落盘。
 * **游戏内 API**：所有调用都对着 `minecraft_26.2_client.jar` 反编译核对过（`javap`）：
   `KeyMapping.click/set`、`MouseHandler#turnPlayer` 的灵敏度公式、`Screen#keyPressed` 的 esc 处理、
   `handleGlobalKeyPress` 的顺序、`Screenshot.takeScreenshot(RenderTarget, Consumer<NativeImage>)`、
+  `MouseHandler#xpos/getScaledXPos/isMouseGrabbed`、`MouseHandler#releaseMouse` 里 `glfwSetCursorPos`
+  之后直接写 `xpos/ypos` 的做法、`AbstractContainerScreen#mouseClicked` 用事件坐标找格子，
   `ClientPacketListener#sendChat/sendCommand`，以及 Baritone 的
   `BaritoneAPI#getProvider → IBaritoneProvider#getPrimaryBaritone → IBaritone#getCommandManager → ICommandManager#execute`。
 
@@ -274,6 +317,10 @@ mcctl                      命令行封装脚本
 * `F3` 单独按可以切换调试信息，但 `F3+X` 组合键（如 `F3+G` 区块边界）不生效——原版这段逻辑在
   私有的 `KeyboardHandler#keyPress` 里，本模组只公开复刻了 `F3` 的开关行为。
 * 游戏内滚轮走反射调用 `MouseHandler#onScroll`；若将来版本改名，`mouse scroll` 会静默失效（其他命令不受影响）。
+* `mouse goto` 靠反射写 `MouseHandler#xpos/ypos`，字段一旦改名就只剩 `glfwSetCursorPos` 本身的效果
+  （真 X11 下光标照样会动，只是同一请求里的点击可能用到旧坐标）；`/mouse` 读的是公开的 `xpos()`，不受影响。
+* 界面里的相对移动 `mouse move` 依赖 GLFW 的光标回调；Xwayland 下 warp 不保证产生回调，所以 GUI 定位请用
+  绝对坐标的 `mouse goto`，一次请求只放一个光标移动。
 
 ### 退出时不再写崩溃报告
 

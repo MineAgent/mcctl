@@ -5,8 +5,10 @@ package com.example.mcctl;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.platform.InputConstants;
+import com.mojang.blaze3d.platform.Window;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.MouseHandler;
 import net.minecraft.client.Screenshot;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.ChatScreen;
@@ -23,10 +25,12 @@ import net.fabricmc.loader.api.metadata.ModMetadata;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -63,6 +67,10 @@ public final class McInputExecutor implements InputExecutor {
 
 	/** private MouseHandler#onScroll(long, double, double) - used for the mouse wheel. */
 	private static Method onScroll;
+
+	/** private MouseHandler#xpos / #ypos - synced after an absolute cursor move. */
+	private static Field cursorX;
+	private static Field cursorY;
 
 	private static Minecraft mc() {
 		return Minecraft.getInstance();
@@ -308,10 +316,16 @@ public final class McInputExecutor implements InputExecutor {
 
 			if (screen != null && !chatFocused(minecraft) && minecraft.mouseHandler != null
 					&& !minecraft.mouseHandler.isMouseGrabbed()) {
-				// GUI: move the real cursor, the game picks it up on the next frame.
-				long handle = minecraft.getWindow().handle();
-				GLFW.glfwSetCursorPos(handle, minecraft.mouseHandler.xpos() + dx,
-						minecraft.mouseHandler.ypos() + dy);
+				// GUI: move the real cursor and keep the tracked position in step. GLFW only feeds
+				// the new position back through the cursor callback on the next glfwPollEvents - and
+				// under Xwayland a warp often produces no callback at all - so without the sync the
+				// deltas would not accumulate and a following click would use the old spot.
+				Window window = minecraft.getWindow();
+				MouseHandler mouse = minecraft.mouseHandler;
+				int px = clamp((int) Math.round(mouse.xpos()) + dx, 0, Math.max(window.getScreenWidth() - 1, 0));
+				int py = clamp((int) Math.round(mouse.ypos()) + dy, 0, Math.max(window.getScreenHeight() - 1, 0));
+				GLFW.glfwSetCursorPos(window.handle(), px, py);
+				syncCursorPos(mouse, px, py);
 				return;
 			}
 
@@ -334,6 +348,122 @@ public final class McInputExecutor implements InputExecutor {
 			}
 			player.turn(yaw, pitch);
 		});
+	}
+
+	// ----------------------------------------------------------- cursor position
+
+	/**
+	 * Puts the cursor at an absolute window-pixel position (the space {@code GET /mouse} reports and
+	 * the screenshots use).
+	 *
+	 * <p>Doing nothing while the mouse is grabbed is deliberate: in the world GLFW disables the
+	 * cursor and parks it at the window centre, so there is no free cursor to move (turn the view
+	 * with {@code mouse move} instead).</p>
+	 */
+	@Override
+	public void mouseGoto(int x, int y) {
+		onClientThread(() -> {
+			Minecraft minecraft = mc();
+			if (minecraft == null || minecraft.mouseHandler == null || minecraft.getWindow() == null) {
+				return;
+			}
+			MouseHandler mouse = minecraft.mouseHandler;
+			if (mouse.isMouseGrabbed()) {
+				LOG.fine("mouse goto ignored: no screen open, the cursor is grabbed");
+				return;
+			}
+
+			Window window = minecraft.getWindow();
+			int px = clamp(x, 0, Math.max(window.getScreenWidth() - 1, 0));
+			int py = clamp(y, 0, Math.max(window.getScreenHeight() - 1, 0));
+			GLFW.glfwSetCursorPos(window.handle(), px, py);
+			// GLFW only reports the new position back through the cursor callback, which runs on the
+			// next glfwPollEvents, so a click in the same request would still use the old spot.
+			// Mirror MouseHandler#releaseMouse (it patches xpos/ypos right after glfwSetCursorPos).
+			syncCursorPos(mouse, px, py);
+		});
+	}
+
+	/**
+	 * @return the cursor state as {@code "<field>：<value>"} lines, read on the client thread
+	 * @throws IllegalStateException when the client is gone or does not answer in time
+	 */
+	@Override
+	public String mousePosition() {
+		if (mc() == null) {
+			throw new IllegalStateException("Minecraft client is not running");
+		}
+
+		CompletableFuture<String> result = new CompletableFuture<>();
+		onClientThread(() -> {
+			try {
+				result.complete(describeMouse());
+			} catch (Throwable t) {
+				result.completeExceptionally(t);
+			}
+		});
+
+		try {
+			return result.get(TYPE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+		} catch (TimeoutException e) {
+			throw new IllegalStateException("the client thread did not answer within " + TYPE_TIMEOUT_MS + " ms");
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IllegalStateException("interrupted");
+		} catch (ExecutionException e) {
+			Throwable cause = e.getCause();
+			if (cause instanceof RuntimeException runtime) {
+				throw runtime;
+			}
+			throw new IllegalStateException(cause == null ? String.valueOf(e) : String.valueOf(cause), cause);
+		}
+	}
+
+	/** Runs on the client thread: reads the cursor in window pixels and in GUI-scaled units. */
+	private static String describeMouse() {
+		Minecraft minecraft = mc();
+		Window window = minecraft == null ? null : minecraft.getWindow();
+		MouseHandler mouse = minecraft == null ? null : minecraft.mouseHandler;
+		if (window == null || mouse == null) {
+			throw new IllegalStateException("the client is still starting up");
+		}
+
+		Screen screen = minecraft.gui.screen();
+		return new StringBuilder()
+				.append("光标：").append(decimal(mouse.xpos())).append(' ').append(decimal(mouse.ypos())).append('\n')
+				.append("缩放：").append(decimal(mouse.getScaledXPos(window))).append(' ')
+				.append(decimal(mouse.getScaledYPos(window))).append('\n')
+				.append("窗口：").append(window.getScreenWidth()).append('x').append(window.getScreenHeight()).append('\n')
+				.append("GUI：").append(window.getGuiScaledWidth()).append('x')
+				.append(window.getGuiScaledHeight()).append('\n')
+				.append("抓取：").append(mouse.isMouseGrabbed() ? "是" : "否").append('\n')
+				.append("界面：").append(screen == null ? "无" : screen.getClass().getSimpleName()).append('\n')
+				.toString();
+	}
+
+	private static String decimal(double value) {
+		return String.format(Locale.ROOT, "%.1f", value);
+	}
+
+	private static int clamp(int value, int min, int max) {
+		return value < min ? min : Math.min(value, max);
+	}
+
+	private static void syncCursorPos(MouseHandler mouse, double x, double y) {
+		try {
+			if (cursorX == null) {
+				cursorX = MouseHandler.class.getDeclaredField("xpos");
+				cursorX.setAccessible(true);
+				cursorY = MouseHandler.class.getDeclaredField("ypos");
+				cursorY.setAccessible(true);
+			}
+			cursorX.setDouble(mouse, x);
+			cursorY.setDouble(mouse, y);
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			// Not fatal: the real cursor still moved, only a click in the same request might use the
+			// previous position (put a small delay in front of the click then).
+			LOG.log(Level.FINE, "could not sync the tracked cursor position", e);
+		}
 	}
 
 	@Override

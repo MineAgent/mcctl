@@ -22,6 +22,8 @@ public final class Help {
 				                    (别名: /screenshot, /prtsc.png)
 				  GET  /mods        列出所有已加载模组的 ID/版本/名称 (纯文本, 每行一条)
 				                    (别名: /modlist, /mods.txt)
+				  GET  /mouse       当前鼠标光标位置 (纯文本, 窗口像素 + GUI 缩放坐标)
+				                    (别名: /cursor, /mouse.txt)
 
 				命令语法
 				------------------------------------------------------------
@@ -29,6 +31,7 @@ public final class Help {
 				  <按键>+<按键>+... [时长ms]     同时按住多个按键, 例如 W+Ctrl 100
 				  mouse left|right|mid [时长ms]  鼠标按键 (默认 50ms)
 				  mouse move <dx> <dy>           鼠标/视角移动 (像素, +右 +下, -左 -上)
+				  mouse goto <x> <y>             把光标移到窗口像素坐标 (界面开着时才有意义)
 				  mouse scroll <数值>            滚轮 (正数=向上滚)
 				  delay <ms> <命令>              收到请求后先等待 ms 毫秒, 再执行命令
 				  release                        立即松开所有按键/鼠标
@@ -73,6 +76,7 @@ public final class Help {
 				  curl -X POST --data-binary 'W+Ctrl 100'       http://127.0.0.1:3420
 				  curl -X POST --data-binary 'mouse left'       http://127.0.0.1:3420
 				  curl -X POST --data-binary 'mouse move +30 -80' http://127.0.0.1:3420
+				  curl -X POST --data-binary 'mouse goto 325 123' http://127.0.0.1:3420  # 光标移到像素坐标
 				  curl -X POST --data-binary 'mouse mid'        http://127.0.0.1:3420
 				  curl -X POST --data-binary 'delay 80 W 50'    http://127.0.0.1:3420
 				  curl -X POST --data-binary '1 50'             http://127.0.0.1:3420   # 切换到第 1 格
@@ -89,6 +93,7 @@ public final class Help {
 				  curl -X POST --data-binary 'bt stop'          http://127.0.0.1:3420   # 停止寻路
 				  curl http://127.0.0.1:3420                                             # 本说明
 				  curl http://127.0.0.1:3420/mods                                        # 已加载模组
+				  curl http://127.0.0.1:3420/mouse                                       # 当前光标位置
 				  curl -o shot.png http://127.0.0.1:3420/prtsc                           # 截图到文件
 
 				  # 多行 = 顺序执行的小脚本 (上一行结束后才执行下一行)
@@ -114,6 +119,13 @@ public final class Help {
 				主菜单等界面一样可以操作, 例如 mouse left 点 "单人游戏" 按钮
 				/prtsc 与游戏内 F2 用同一套取帧逻辑, 截的是当前帧, 不会写入 screenshots 目录
 				/mods 每行 "<模组ID> <版本> <名称>", 按模组 ID 排序
+				/mouse 每行 "<字段>：<值>": 光标 = 窗口像素坐标 (与截图、mouse move 的位移同一坐标系),
+				       缩放 = GUI 缩放坐标, 窗口/GUI = 尺寸, 抓取 = 是表示鼠标被游戏锁住,
+				       界面 = 当前界面类名
+				世界里鼠标被游戏锁住, 光标停在窗口中心, 此时位置没有意义;
+				只有界面开着时 mouse goto 才生效 (它会同步游戏记录的光标位置, 同一请求里紧接着
+				mouse left 也能点中; 若同步失败则先 delay 一小段再点)
+				手点 GUI 只是兜底: 界面按钮优先 TAB/ENTER, 格子操作优先 /craft /furnace /chest /inventory
 				玩家信息(坐标/方位/背包)已拆到另一个模组 MC Advanced Info Fetch: GET http://127.0.0.1:3421/info
 				bt/# 命令优先直接调用 Baritone API (不发聊天包), 没装 Baritone 时才走聊天
 				在 shell 里用 bt 时要给整条命令加引号, 否则 bash 会把 ~ 展开成 $HOME: ./mcctl 'bt goal ~ ~ ~20'
