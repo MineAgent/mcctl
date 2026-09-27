@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 // Copyright (C) 2026 MineAgent
 
+import com.example.httpd.HttpdProvider;
 import com.example.mcctl.Action;
 import com.example.mcctl.CommandException;
 import com.example.mcctl.CommandParser;
 import com.example.mcctl.CommandRunner;
-import com.example.mcctl.ControlServer;
+import com.example.mcctl.ControlEndpoint;
 import com.example.mcctl.InputExecutor;
 
 import java.util.ArrayList;
@@ -14,9 +15,9 @@ import java.util.List;
 /**
  * Standalone harness used to verify the transport + parser layer without launching Minecraft.
  *
- * Compile the Minecraft-free classes together with this file and run it; it exercises the parser,
- * then starts the real HTTP server on 127.0.0.1:3420 with a fake executor that logs the input it
- * would deliver to the game.
+ * Compile the Minecraft-free classes together with this file (and MGHttpdProvider's API jar) and
+ * run it; it exercises the parser, then mounts mcctl's endpoints at {@code /ctl} on the real
+ * 127.0.0.1:3420 server with a fake executor that logs the input it would deliver to the game.
  */
 public final class VerifyServer {
 
@@ -54,15 +55,6 @@ public final class VerifyServer {
 		}
 
 		@Override
-		public String loadedMods() {
-			add("mods");
-			return "baritone 1.19.0 Baritone\n"
-					+ "fabric-api 0.160.0+26.2 Fabric API\n"
-					+ "fabricloader 0.19.5 Fabric Loader\n"
-					+ "mcctl 1.2.0 mcctl - Client Connect\n";
-		}
-
-		@Override
 		public byte[] captureScreenshot() throws Exception {
 			// Stand-in for the real framebuffer capture: emit a small valid PNG.
 			java.awt.image.BufferedImage image =
@@ -92,9 +84,9 @@ public final class VerifyServer {
 
 		FakeExecutor fake = new FakeExecutor();
 		CommandRunner runner = new CommandRunner(fake);
-		ControlServer server = new ControlServer(runner, fake);
-		server.start();
-		System.out.println("READY - http://127.0.0.1:3420");
+		HttpdProvider.register(ControlEndpoint.PREFIX, ControlEndpoint.NAME, ControlEndpoint.ENDPOINTS,
+				new ControlEndpoint(runner, fake));
+		System.out.println("READY - http://127.0.0.1:3420/ctl");
 		Thread.sleep(Long.MAX_VALUE);
 	}
 

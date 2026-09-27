@@ -28,6 +28,7 @@ eula.txt
 *.class
 *.jar
 !gradle/wrapper/gradle-wrapper.jar
+!libs/httpdprovider-*.jar
 hs_err_pid*
 replay_pid*
 *.hprof

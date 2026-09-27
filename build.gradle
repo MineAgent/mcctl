@@ -19,6 +19,11 @@ dependencies {
 
 	// This mod only needs the loader (no Fabric API dependency).
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+
+	// MGHttpdProvider's registration API (PathHandler + HttpdProvider.register). compileOnly: the
+	// jar must not be bundled, Fabric Loader loads the real one from .minecraft/mods/.
+	// libs/httpdprovider-1.0.jar is copied from the HttpdProvider build (see README).
+	compileOnly files('libs/httpdprovider-1.0.jar')
 }
 
 processResources {

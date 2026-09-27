@@ -6,17 +6,17 @@
 #   ./mcctl mouse left                left click
 #   ./mcctl mouse move +30 -80        move the mouse 30 px right / 80 px up
 #   ./mcctl delay 80 W 50             wait 80 ms, then hold W for 50 ms
-#   ./mcctl help                      full manual (GET /)
-#   ./mcctl prtsc [shot.png]          screenshot the game into a file (GET /prtsc)
-#   ./mcctl mods                      list loaded mods: id + version + name (GET /mods)
+#   ./mcctl help                      full manual (GET /ctl/)
+#   ./mcctl prtsc [shot.png]          screenshot the game into a file (GET /ctl/prtsc)
+#   ./mcctl mousepos                  cursor position (GET /ctl/mouse)
 #   ./mcctl -f script.txt             run every line of a file, one request per line
 #   ./mcctl -r 'W 100;mouse left'     raw body (semicolon separated, one request)
 #
 # Environment:
-#   MCCTL_URL   default http://127.0.0.1:3420
+#   MCCTL_URL   default http://127.0.0.1:3420/ctl
 set -euo pipefail
 
-URL="${MCCTL_URL:-http://127.0.0.1:3420}"
+URL="${MCCTL_URL:-http://127.0.0.1:3420/ctl}"
 
 usage() {
 	sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
@@ -30,13 +30,12 @@ fi
 case "$1" in
 	-h | --help | help)
 		if [ "$1" = "help" ]; then
-			exec curl -sS "$URL"
+			exec curl -sS "$URL/"
 		fi
 		usage 0
 		;;
-	mods | modlist)
-		shift
-		curl -sS "$URL/mods"
+	mousepos | cursor)
+		curl -sS "$URL/mouse"
 		;;
 	prtsc | screenshot | -s)
 		shift
@@ -64,15 +63,15 @@ case "$1" in
 			[ -z "${line//[[:space:]]/}" ] && continue
 			case "$line" in \#*) continue ;; esac
 			printf '%s -> ' "$line"
-			curl -sS -X POST --data-binary "$line" "$URL"
+			curl -sS -X POST --data-binary "$line" "$URL/"
 		done < "$file"
 		;;
 	-r | --raw)
 		shift
 		[ $# -ge 1 ] || { echo "mcctl: -r needs a body" >&2; exit 2; }
-		curl -sS -X POST --data-binary "$*" "$URL"
+		curl -sS -X POST --data-binary "$*" "$URL/"
 		;;
 	*)
-		curl -sS -X POST --data-binary "$*" "$URL"
+		curl -sS -X POST --data-binary "$*" "$URL/"
 		;;
 esac

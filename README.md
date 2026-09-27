@@ -1,28 +1,30 @@
 # mcctl — Minecraft 客户端远程控制模组（Fabric / Minecraft 26.2）
 
-在游戏里起一个只监听 `127.0.0.1:3420` 的 HTTP 服务：
+把控制接口挂在 **MGHttpdProvider** 的共享 HTTP 服务（`127.0.0.1:3420`）的 `/ctl` 前缀下：
 
-* `GET /` → 返回完整使用说明
-* `POST /` → 用纯文本命令操作游戏（按键、鼠标、视角、滚轮）
-* `GET /prtsc` → 截取当前游戏画面，直接返回 PNG 图片
-* `GET /mods` → 列出所有已加载模组的 ID、版本、名称（纯文本）
-* `GET /mouse` → 当前鼠标光标位置（窗口像素 + GUI 缩放坐标，纯文本）
+* `GET /ctl/` → 返回完整使用说明
+* `POST /ctl/` → 用纯文本命令操作游戏（按键、鼠标、视角、滚轮）
+* `GET /ctl/prtsc` → 截取当前游戏画面，直接返回 PNG 图片
+* `GET /ctl/mouse` → 当前鼠标光标位置（窗口像素 + GUI 缩放坐标，纯文本）
+
+`GET http://127.0.0.1:3420/` 由 MGHttpdProvider 提供，列出当前挂载的所有 endpoint（mcctl、AdvancedInfoFetcher …）。
+HTTP 服务、路由和「关游戏时结束 JVM」都由 MGHttpdProvider 负责，本模组只注册自己的前缀。
 
 命令在主线程（渲染线程）执行，走的是原版输入管线（`KeyMapping` / `Screen` 事件），
 不抢占真实键鼠，也不会被反作弊当成外挂注入（这是客户端本地模组）。
 
 ```
-curl -X POST --data-binary 'W 100'              http://127.0.0.1:3420
-curl -X POST --data-binary 'W+Ctrl 100'         http://127.0.0.1:3420
-curl -X POST --data-binary 'mouse left'         http://127.0.0.1:3420
-curl -X POST --data-binary 'mouse move +30 -80' http://127.0.0.1:3420
-curl -X POST --data-binary 'mouse goto 325 123' http://127.0.0.1:3420   # 光标移到像素坐标
-curl -X POST --data-binary 'mouse mid'          http://127.0.0.1:3420
-curl -X POST --data-binary 'delay 80 W 50'      http://127.0.0.1:3420
-curl -X POST --data-binary 'bt goal ~ ~ ~20'    http://127.0.0.1:3420   # Baritone
-curl -o shot.png http://127.0.0.1:3420/prtsc    # 截图（PNG）
-curl http://127.0.0.1:3420/mods                 # 已加载模组列表
-curl http://127.0.0.1:3420/mouse                # 当前光标位置
+curl -X POST --data-binary 'W 100'              http://127.0.0.1:3420/ctl
+curl -X POST --data-binary 'W+Ctrl 100'         http://127.0.0.1:3420/ctl
+curl -X POST --data-binary 'mouse left'         http://127.0.0.1:3420/ctl
+curl -X POST --data-binary 'mouse move +30 -80' http://127.0.0.1:3420/ctl
+curl -X POST --data-binary 'mouse goto 325 123' http://127.0.0.1:3420/ctl   # 光标移到像素坐标
+curl -X POST --data-binary 'mouse mid'          http://127.0.0.1:3420/ctl
+curl -X POST --data-binary 'delay 80 W 50'      http://127.0.0.1:3420/ctl
+curl -X POST --data-binary 'bt goal ~ ~ ~20'    http://127.0.0.1:3420/ctl   # Baritone
+curl -o shot.png http://127.0.0.1:3420/ctl/prtsc    # 截图（PNG）
+curl http://127.0.0.1:3420/                         # 当前可用的 endpoint（MGHttpdProvider）
+curl http://127.0.0.1:3420/ctl/mouse                # 当前光标位置
 ```
 
 ## 命令语法
@@ -33,7 +35,7 @@ curl http://127.0.0.1:3420/mouse                # 当前光标位置
 | `<按键>+<按键>+... [时长ms]` | 同时按住多个键，例如 `W+Ctrl 100` |
 | `mouse left\|right\|mid [时长ms]` | 鼠标左/右/中键（默认 50ms） |
 | `mouse move <dx> <dy>` | 相对移动鼠标/视角（像素；+右 +下，-左 -上） |
-| `mouse goto <x> <y>` | 把光标移到窗口像素坐标（`GET /mouse` / 截图那套坐标；界面开着时才有意义） |
+| `mouse goto <x> <y>` | 把光标移到窗口像素坐标（`GET /ctl/mouse` / 截图那套坐标；界面开着时才有意义） |
 | `mouse scroll <数值>` | 滚轮（正数向上） |
 | `delay <ms> <命令>` | 收到请求后先等 `ms` 毫秒再执行 |
 | `release` | 立刻松开所有按键/鼠标 |
@@ -52,11 +54,11 @@ curl http://127.0.0.1:3420/mouse                # 当前光标位置
 ### 打字 `type` / `typeEnter`
 
 ```bash
-curl -X POST --data-binary 'T 50'         http://127.0.0.1:3420   # 先打开聊天框
-curl -X POST --data-binary 'type hello'   http://127.0.0.1:3420   # 打进聊天框
-curl -X POST --data-binary 'typeEnter'    http://127.0.0.1:3420   # 发送
-curl -X POST --data-binary 'type hi\n'    http://127.0.0.1:3420   # 打字并回车（\n = ENTER）
-curl -X POST --data-binary $'T 50\ntype hi\ntypeEnter' http://127.0.0.1:3420   # 一个请求走完
+curl -X POST --data-binary 'T 50'         http://127.0.0.1:3420/ctl   # 先打开聊天框
+curl -X POST --data-binary 'type hello'   http://127.0.0.1:3420/ctl   # 打进聊天框
+curl -X POST --data-binary 'typeEnter'    http://127.0.0.1:3420/ctl   # 发送
+curl -X POST --data-binary 'type hi\n'    http://127.0.0.1:3420/ctl   # 打字并回车（\n = ENTER）
+curl -X POST --data-binary $'T 50\ntype hi\ntypeEnter' http://127.0.0.1:3420/ctl   # 一个请求走完
 ```
 
 * 字符走原版的 `Screen#charTyped`（`CharacterEvent`），不是键码，所以不受键盘布局影响。
@@ -84,9 +86,9 @@ curl -X POST --data-binary $'T 50\ntype hi\ntypeEnter' http://127.0.0.1:3420   #
 ### Baritone 支持
 
 ```bash
-curl -X POST --data-binary 'bt help'          http://127.0.0.1:3420
-curl -X POST --data-binary 'bt goal ~ ~ ~20'  http://127.0.0.1:3420
-curl -X POST --data-binary 'bt stop'          http://127.0.0.1:3420
+curl -X POST --data-binary 'bt help'          http://127.0.0.1:3420/ctl
+curl -X POST --data-binary 'bt goal ~ ~ ~20'  http://127.0.0.1:3420/ctl
+curl -X POST --data-binary 'bt stop'          http://127.0.0.1:3420/ctl
 ./mcctl 'bt goto 100 64 200'
 ```
 
@@ -123,53 +125,32 @@ Baritone 的类型全部用反射调用，所以本模组**不依赖** Baritone�
 | 413 | 请求体过大（>64KB） |
 | 500 | 内部错误 |
 
-### 截图接口 `GET /prtsc`
+### 截图接口 `GET /ctl/prtsc`
 
 ```bash
-curl -o shot.png http://127.0.0.1:3420/prtsc
+curl -o shot.png http://127.0.0.1:3420/ctl/prtsc
 ```
 
 * 返回 `200 image/png`（游戏窗口原始分辨率，不缩放），同时带 `Content-Disposition: inline`。
-* 别名：`/screenshot`、`/prtsc.png`、`/screenshot.png`；`HEAD` 也可以（只回状态和类型）。
+* 别名：`/ctl/screenshot`、`/ctl/prtsc.png`、`/ctl/screenshot.png`；`HEAD` 也可以（只回状态和类型）。
 * 实现和游戏内 `F2` 用的是同一套取帧逻辑（`Screenshot.takeScreenshot` + `NativeImage`），
   但**不会**往 `screenshots/` 目录写文件——PNG 直接通过 HTTP 返回。
 * 失败时：`409`（客户端没起来）、`500`（取帧超时/失败，文本里有原因）。
 
-### 模组列表接口 `GET /mods`
+> **已移除 `GET /mods`**：模组列表功能删掉了。想知道装了哪些 endpoint，看 MGHttpdProvider 的
+> `GET http://127.0.0.1:3420/`（它列出所有已挂载的 endpoint）。
+
+> **玩家信息（坐标/方位/背包）在独立模组** [AdvancedInfoFetcher](https://github.com/MineAgent/AdvancedInfoFetcher)：
+> 挂在同一个 3420 服务的 `/aif` 前缀下，`GET http://127.0.0.1:3420/aif/info` 返回坐标/方位/背包/副手/盔甲。
+
+### 鼠标位置接口 `GET /ctl/mouse` 与 `mouse goto`
 
 ```bash
-curl http://127.0.0.1:3420/mods
-./mcctl mods
+curl http://127.0.0.1:3420/ctl/mouse
+curl -X POST --data-binary 'mouse goto 325 123' http://127.0.0.1:3420/ctl
 ```
 
-返回 `200 text/plain; charset=utf-8`，每行一个模组，格式 `<模组ID> <版本> <名称>`，按模组 ID 排序
-（别名 `/modlist`、`/mods.txt`）：
-
-```
-advanced-info-fetch 1.0.0 MC Advanced Info Fetch
-baritone 1.19.0 Baritone
-craftcmd 1.1.0 Craft Command
-fabric-api 0.160.0+26.2 Fabric API
-fabricloader 0.19.5 Fabric Loader
-java 25 OpenJDK 64-Bit Server VM
-mcctl 1.6.0 mcctl - Client Connect
-minecraft 26.2 Minecraft
-noautopause 1.0.2 noautopause
-```
-
-数据来自 Fabric Loader 的 `getAllMods()`，所以包含 Fabric API 的子模块、`minecraft`、`java` 这些内置项。
-
-> **玩家信息（坐标/方位/背包）已拆到独立模组** [AdvancedInfoFetcher](https://github.com/MineAgent/AdvancedInfoFetcher)：
-> 监听 `127.0.0.1:3421`，`GET /info` 返回坐标/方位/背包/副手/盔甲，和 mcctl 可以同时装。
-
-### 鼠标位置接口 `GET /mouse` 与 `mouse goto`
-
-```bash
-curl http://127.0.0.1:3420/mouse
-curl -X POST --data-binary 'mouse goto 325 123' http://127.0.0.1:3420
-```
-
-`GET /mouse`（别名 `/cursor`、`/mouse.txt`）返回 `200 text/plain`，每行 `<字段>：<值>`：
+`GET /ctl/mouse`（别名 `/ctl/cursor`、`/ctl/mouse.txt`）返回 `200 text/plain`，每行 `<字段>：<值>`：
 
 ```
 光标：325.0 123.0      # 窗口像素坐标，和 /prtsc 截图、mouse move 的位移同一坐标系
@@ -188,22 +169,22 @@ GUI：427x240           # GUI 缩放尺寸
 
 * 为什么需要这一行：GLFW **只在指针位于窗口内容区上方时**才投递移动事件，所以指针一旦离开窗口,
   `MouseHandler#xpos/ypos` 就冻结在最后一个窗口内像素上——看起来像个合法坐标，其实已经不作数了
-  （实测：窗口在 (653,515)/854x480，把指针扔到 (200,200) 或 (2100,1300)，`/mouse` 都还报 `427,240`）。
+  （实测：窗口在 (653,515)/854x480，把指针扔到 (200,200) 或 (2100,1300)，`/ctl/mouse` 都还报 `427,240`）。
 * 判断用的是 `GLFW.glfwGetWindowAttrib(window, GLFW_HOVERED)`，语义就是「光标是否在窗口内容区上方」，
   **X11 / Wayland / Windows / macOS 各后端都由 GLFW 统一实现，代码里没有任何平台分支**
   （Linux 上的 MC 固定走 X11/Xwayland，实测也只做过这一条；详见下面的「已知限制」）。
   不用 `glfwGetCursorPos` 是因为它有平台差异：X11 会返回负数/超界坐标，Wayland 客户端根本拿不到全局指针位置。
-* **界面开着时**（`抓取：否`）`mouse goto <x> <y>` 把光标放到窗口像素坐标，可以直接对着 `/prtsc` 截图量出来的
+* **界面开着时**（`抓取：否`）`mouse goto <x> <y>` 把光标放到窗口像素坐标，可以直接对着 `/ctl/prtsc` 截图量出来的
   位置点：`mouse goto 325 123` + `mouse left` 可以放在同一个请求里。指针在窗口外时也照样管用——
   绝对定位是自纠正的，会把指针一起拉回窗口内（实测从窗口外 `goto 321 202`，物理指针回到 `(974,717)` =
   窗口原点 `(653,515)` + 目标，点击命中）。
 * **在世界里**（`抓取：是`）GLFW 把光标禁用了，`mouse goto` 不生效（转视角要用 `mouse move`），
-  `/mouse` 报告的只是窗口中心。
+  `/ctl/mouse` 报告的只是窗口中心。
 * 坐标会被夹到窗口范围内（`0..窗口-1`）。
 * 一次请求里只放一个光标移动：GLFW 把新位置回传是异步的，同一 tick 里的第二次 `glfwSetCursorPos`
   在 Xwayland 下会丢。`mouse goto` + `mouse left`（同一请求）没问题，两个移动叠在一起不要写。
 * **手点 GUI 只是兜底手段**：界面按钮优先 `TAB`/`ENTER`，格子操作优先 Craft Command 的
-  `/craft` `/furnace` `/chest` `/inventory`。`/mouse` + `mouse goto` 是在**没有 Craft Command** 时才用的。
+  `/craft` `/furnace` `/chest` `/inventory`。`/ctl/mouse` + `mouse goto` 是在**没有 Craft Command** 时才用的。
 
 ## 命令行工具
 
@@ -216,10 +197,10 @@ GUI：427x240           # GUI 缩放尺寸
 ./mcctl help                    # 打印完整说明
 ./mcctl prtsc                   # 截图，存成 mcctl-<时间戳>.png
 ./mcctl prtsc shot.png          # 截图到指定文件
-./mcctl mods                    # 已加载模组 ID/版本/名称 (GET /mods)
+./mcctl mousepos                # 当前光标位置 (GET /ctl/mouse)
 ./mcctl -f script.txt           # 每行一个请求，顺序执行
 ./mcctl -r 'W 20;mouse left'    # 一个请求里多条命令
-MCCTL_URL=http://127.0.0.1:3420 ./mcctl F3
+MCCTL_URL=http://127.0.0.1:3420/ctl ./mcctl F3
 ```
 
 ## 构建
@@ -228,15 +209,16 @@ MCCTL_URL=http://127.0.0.1:3420 ./mcctl F3
 所以 Loom 不需要任何 mappings 配置（`build.gradle` 里没有 `mappings` 行）。
 
 ```bash
-./gradlew build          # 产物: build/libs/mcctl-1.6.0.jar
+./gradlew build          # 产物: build/libs/mcctl-1.6.1.jar
 ./gradlew runClient      # 直接启动带模组的客户端（需要正版登录/开发环境配置）
 ```
 
-安装：把 `build/libs/mcctl-1.6.0.jar` 丢进 `.minecraft/mods/`，
+安装：把 `build/libs/mcctl-1.6.1.jar` **和 [MGHttpdProvider](https://github.com/MineAgent/HttpdProvider) 的 jar**（`httpdprovider-1.0.jar`，必需）一起丢进 `.minecraft/mods/`，
 再装 Fabric Loader 0.19.5+（不需要 Fabric API）。启动后日志里会出现：
 
 ```
-mcctl listening on http://127.0.0.1:3420
+MGHttpdProvider listening on http://127.0.0.1:3420
+registered /ctl (mcctl — 客户端远程控制 ...)
 ```
 
 ## 实现要点（Minecraft 26.2）
@@ -250,11 +232,10 @@ mcctl listening on http://127.0.0.1:3420
 | `esc` | 有界面时转发给界面（`Screen#keyPressed` 会返回上一级），否则 `Minecraft#pauseGame` |
 | `F3` | `Minecraft#debugEntries.toggleDebugOverlay()`（原版这段逻辑在私有的 `KeyboardHandler#keyPress` 里） |
 | 打开界面时 | 键盘/鼠标事件转发给当前 `Screen`，所以在背包里也能点格子、按 `E` 关闭 |
-| `/prtsc` 截图 | `Screenshot.takeScreenshot(gameRenderer.mainRenderTarget(), image -> ...)` 取帧，`NativeImage.writeToFile` 编码成 PNG 后读回内存返回（临时文件用完即删） |
-| `/mods` | `FabricLoader#getAllMods()` → `ModMetadata#getId/getVersion/getName`，按 ID 排序，输出 `<id> <version> <name>` |
-| `/mouse` | `MouseHandler#xpos/ypos`（窗口像素）+ `getScaledXPos/YPos`（GUI 缩放）+ `isMouseGrabbed` + `Window` 尺寸 + 当前 `Screen` 类名，全部在渲染线程读 |
+| `/ctl/prtsc` 截图 | `Screenshot.takeScreenshot(gameRenderer.mainRenderTarget(), image -> ...)` 取帧，`NativeImage.writeToFile` 编码成 PNG 后读回内存返回（临时文件用完即删） |
+| `/ctl/mouse` | `MouseHandler#xpos/ypos`（窗口像素）+ `getScaledXPos/YPos`（GUI 缩放）+ `isMouseGrabbed` + `Window` 尺寸 + 当前 `Screen` 类名，全部在渲染线程读 |
 | `mouse goto` | `GLFW.glfwSetCursorPos(窗口像素)`；随后反射同步 `MouseHandler#xpos/ypos`（复刻 `MouseHandler#releaseMouse` 的做法），否则同一请求里紧接着的点击会用旧坐标 |
-| 关游戏 | `ClientExitWatcher` 守候渲染线程（`Minecraft#getRunningThread()`）；线程结束后停掉本模组的 HTTP 服务并 `System.exit(0)`，赶在 post-main 看门狗写报告之前结束 JVM |
+| 挂载 | `HttpdProvider.register("/ctl", ...)`（MGHttpdProvider 的 API，`compileOnly libs/httpdprovider-1.0.jar`）；HTTP 服务、`GET /` 索引和关游戏时的退出处理都在 provider 里 |
 
 线程模型：HTTP 线程 → 单线程队列（保证顺序）→ `Minecraft.execute()` 到渲染线程执行输入。
 
@@ -262,16 +243,15 @@ mcctl listening on http://127.0.0.1:3420
 
 ```
 src/main/java/com/example/mcctl/
-  McCtlClientMod.java    Fabric 客户端入口，启动 3420 端口服务
-  ClientExitWatcher.java 守候渲染线程，客户端退出后停掉服务（消除 post-main 崩溃报告）
-  ControlServer.java     HTTP 服务（JDK 自带 com.sun.net.httpserver）
+  McCtlClientMod.java    Fabric 客户端入口，把 /ctl 注册到 MGHttpdProvider
+  ControlEndpoint.java   /ctl 前缀下的 endpoint（说明 / 命令 / 截图 / 光标）
   CommandParser.java     命令解析（纯 Java，可脱离游戏测试）
   Action.java            解析结果
   CommandRunner.java     单线程顺序执行 + 计时
   InputExecutor.java     输入抽象
   McInputExecutor.java   把动作变成真实游戏输入
   Keys.java              按键名 → GLFW 键码
-  Help.java              GET / 返回的使用说明
+  Help.java              GET /ctl/ 返回的使用说明
 tools/VerifyServer.java    脱离游戏验证 HTTP + 解析层（假执行器）
 tools/LoaderSmokeTest.java 用真实 26.2 运行期 classpath 验证入口点 + HTTP 服务
 mcctl                      命令行封装脚本
@@ -285,9 +265,9 @@ Wayland.md                 Wayland 相关的调查留档（平台结论见「已
 
 | 测试 | 结果 |
 | --- | --- |
-| 启动 | 日志出现 `mcctl 1.6.0`，`ss -ltn` 看到 `127.0.0.1:3420` 在监听 |
-| `GET /` | 200，返回完整中文说明 |
-| `GET /prtsc` | 200 `image/png`，854x480（窗口原生分辨率）、306KB、0.14s；画面就是存档里的丛林场景 |
+| 启动 | 日志出现 `MGHttpdProvider listening on http://127.0.0.1:3420` 和 `mcctl ... registered /ctl`，`ss -ltn` 看到 `127.0.0.1:3420` 在监听 |
+| `GET /ctl/` | 200，返回完整中文说明 |
+| `GET /ctl/prtsc` | 200 `image/png`，854x480（窗口原生分辨率）、306KB、0.14s；画面就是存档里的丛林场景 |
 | `W 1500` | 截图对比：玩家确实往前走了一段 |
 | `mouse move +300 -60` | 截图对比：视角明显抬起/右转 |
 | `W+CTRL 800` | 正常返回，键位组合生效 |
@@ -296,16 +276,14 @@ Wayland.md                 Wayland 相关的调查留档（平台结论见「已
 | `bt stop` | `[Baritone] ok canceled` |
 | `bt proc` / `bt help goal` | `No process in control` / goal 子命令帮助 |
 | `chat hello from mcctl` | 聊天里出现 `<DSH> hello from mcctl` |
-| `GET /mods` | `200 text/plain`；列出 57 个已加载模组（含 Fabric API 子模块、`minecraft`、`java`），格式 `<id> <version> <name>` 按 ID 排序 |
-| `/mods` 别名 | `/modlist`、`/mods.txt` 都返回同样的列表；`./mcctl mods` 输出一致 |
 | `delay 200 mouse move 0 +120` + 多行脚本 | 按顺序执行，JSON 回显规范化后的命令 |
-| `GET /mouse`（世界里） | `光标：427.0 240.0`、`抓取：是`、`界面：无`（854x480，GUI 427x240） |
-| `GET /mouse`（暂停菜单） | `ESC` 后 `抓取：否`、`界面：PauseScreen`，光标回到窗口中心 |
+| `GET /ctl/mouse`（世界里） | `光标：427.0 240.0`、`抓取：是`、`界面：无`（854x480，GUI 427x240） |
+| `GET /ctl/mouse`（暂停菜单） | `ESC` 后 `抓取：否`、`界面：PauseScreen`，光标回到窗口中心 |
 | `mouse goto 100 100` | 读回 `光标：100.0 100.0`、`缩放：50.0 50.0` |
 | `mouse goto 321 202` + `mouse left`（同一请求） | 点中暂停菜单的「进度」按钮，`界面：AdvancementsScreen` |
 | `mouse goto 427 154` + `mouse left` | 点中「回到游戏」，回到世界（`抓取：是`、`界面：无`）；分成两个请求也成立 |
 | `mouse goto 9999 9999` | 夹到窗口边界：`光标：853.0 479.0` |
-| 光标被移到窗口外 | 窗口在 (653,515)/854x480，指针扔到 (200,200) 或 (2100,1300) 后 `/mouse` 输出 `光标：不在窗口内，请使用 mouse goto <x> <y>`；此时 `mouse left` 用旧值点不中，`mouse goto 321 202` + `mouse left` 命中（`界面：AdvancementsScreen`），物理指针回到 (974,717) |
+| 光标被移到窗口外 | 窗口在 (653,515)/854x480，指针扔到 (200,200) 或 (2100,1300) 后 `/ctl/mouse` 输出 `光标：不在窗口内，请使用 mouse goto <x> <y>`；此时 `mouse left` 用旧值点不中，`mouse goto 321 202` + `mouse left` 命中（`界面：AdvancementsScreen`），物理指针回到 (974,717) |
 | `mouse move +50 +30`（界面里，已知起点） | 从 300,300 移到 350,330，读回稳定 |
 | 正常退出（旧行为） | 关窗口后 15s 必现 `Client shutdown from post-main` 崩溃报告（post-main 看门狗），退出码 `-8` |
 | 正常退出（本版） | 关窗口后日志依次出现 `client exited, stopping the mcctl server`、`exiting the JVM so the post-main shutdown watchdog cannot fire`；进程退出码 `0`，`crash-reports/` 不新增文件 |
@@ -314,10 +292,10 @@ Wayland.md                 Wayland 相关的调查留档（平台结论见「已
 
 * `./gradlew build` 干净构建通过（Loom 1.17.21 / Gradle 9.5.1 / JDK 25）。
 * **解析层**：41 个用例全过（键位、鼠标、`mouse goto`、`delay`、多行脚本、`bt`/`#`/`chat`、以及 12 种错误输入）；
-  通过 `tools/VerifyServer.java` 起真实 HTTP 服务，用 `curl` 验证 GET 说明 / POST 执行 / `GET /mouse` / 400 / JSON / 命令顺序。
+  通过 `tools/VerifyServer.java` 起真实 HTTP 服务，用 `curl` 验证 GET 说明 / POST 执行 / `GET /ctl/mouse` / 400 / JSON / 命令顺序。
 * **入口点 + 服务**：`tools/LoaderSmokeTest.java` 用打包好的 jar + 真实 26.2 运行期 classpath 加载
   `McCtlClientMod`，确认 `onInitializeClient()` 正常、端口只绑 `127.0.0.1`、无游戏时 POST 与 GET /prtsc 返回 409。
-* **`/prtsc` 传输层**：假执行器返回真 PNG，验证 `200 image/png`、magic number、别名、`HEAD`、`./mcctl prtsc 文件` 落盘。
+* **`/ctl/prtsc` 传输层**：假执行器返回真 PNG，验证 `200 image/png`、magic number、别名、`HEAD`、`./mcctl prtsc 文件` 落盘。
 * **游戏内 API**：所有调用都对着 `minecraft_26.2_client.jar` 反编译核对过（`javap`）：
   `KeyMapping.click/set`、`MouseHandler#turnPlayer` 的灵敏度公式、`Screen#keyPressed` 的 esc 处理、
   `handleGlobalKeyPress` 的顺序、`Screenshot.takeScreenshot(RenderTarget, Consumer<NativeImage>)`、
@@ -336,10 +314,10 @@ Wayland.md                 Wayland 相关的调查留档（平台结论见「已
   私有的 `KeyboardHandler#keyPress` 里，本模组只公开复刻了 `F3` 的开关行为。
 * 游戏内滚轮走反射调用 `MouseHandler#onScroll`；若将来版本改名，`mouse scroll` 会静默失效（其他命令不受影响）。
 * `mouse goto` 靠反射写 `MouseHandler#xpos/ypos`，字段一旦改名就只剩 `glfwSetCursorPos` 本身的效果
-  （真 X11 下光标照样会动，只是同一请求里的点击可能用到旧坐标）；`/mouse` 读的是公开的 `xpos()`，不受影响。
+  （真 X11 下光标照样会动，只是同一请求里的点击可能用到旧坐标）；`/ctl/mouse` 读的是公开的 `xpos()`，不受影响。
 * 界面里的相对移动 `mouse move` 依赖 GLFW 的光标回调；Xwayland 下 warp 不保证产生回调，所以 GUI 定位请用
   绝对坐标的 `mouse goto`，一次请求只放一个光标移动。
-* **平台：Linux 上的 Minecraft 永远跑在 X11/Xwayland 下**，所以 `/mouse`、`mouse goto` 实际只有这一条
+* **平台：Linux 上的 Minecraft 永远跑在 X11/Xwayland 下**，所以 `/ctl/mouse`、`mouse goto` 实际只有这一条
   路径。26.2 在 `GLX` 里写死 `glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11)`：只要 Wayland 和 X11
   两个后端都编进来了、且 `DEBUG_PREFER_WAYLAND` 为假，就强制 X11——会话是 Wayland 也一样，游戏走
   Xwayland。**Wayland 相关的调查（怎么强制、为什么跑不起来、GLFW 各后端的差异）全部收在
@@ -347,26 +325,24 @@ Wayland.md                 Wayland 相关的调查留档（平台结论见「已
 * **其它平台未测试**：Windows / macOS 都没实机跑过。`GLFW_HOVERED`（指针是否在窗口内容区上方）
   由 GLFW 各后端统一实现，预期一致；Windows 的窗口/DPI 缩放、macOS 的坐标原点和 Retina 缩放都可能让
   「窗口像素」的含义需要复核。换平台后先自测一遍：
-  `GET /mouse` → `mouse goto <x> <y>` → `GET /mouse` 读回坐标 → `mouse left` 是否命中。
+  `GET /ctl/mouse` → `mouse goto <x> <y>` → `GET /ctl/mouse` 读回坐标 → `mouse left` 是否命中。
 
 ### 退出时不再写崩溃报告
 
-关游戏时渲染线程返回后，`Main` 会启动一个 post-main 看门狗：15 秒内 JVM 还没结束，它就写一份
-`Client shutdown from post-main` 崩溃报告，然后 `System.exit(-8)`。而 JVM 只有**所有非 daemon 线程**都结束后
-才会自己退出——`com.sun.net.httpserver` 每个服务都带一个非 daemon 的 `HTTP-Dispatcher` 线程（本模组一个，
-AdvancedInfoFetcher 之类的模组还会再有一个），Baritone 也留着非 daemon 的 worker pool。
-JVM 关闭钩子救不了这个场景：JVM 根本没开始关闭，钩子不会执行。
-
-`ClientExitWatcher` 在渲染线程（`Minecraft#getRunningThread()`）上 `join()`，线程结束后先停掉本模组的 HTTP 服务
-（`HttpServer#stop(0)`），再显式 `System.exit(0)`。关闭钩子照常执行（Minecraft 自己的那个也在内），
-所以看门狗永远不会触发；这时世界早已保存、窗口早已关闭（`exitWorldAndClose()` 在 `main()` 返回前就跑完了），
-强制退出不会丢存档。既不依赖 Fabric API 的生命周期事件（本模组依旧只依赖 Fabric Loader），
-也不用自己实现 HTTP 循环。
+已挪到 MGHttpdProvider：共享 HTTP 服务的 `HTTP-Dispatcher` 是非 daemon 线程，关游戏时若不显式结束 JVM，
+Minecraft 的 post-main 看门狗会在 15 秒后写一份 `Client shutdown from post-main` 崩溃报告。
+provider 的 `ClientExitWatcher` 守候渲染线程，线程结束后停服务并 `System.exit(0)`。
+细节见 [MGHttpdProvider 的 README](https://github.com/MineAgent/HttpdProvider)——本模组不再自己起服务，
+也就不再持有这段逻辑。
 
 ## 构建
 
 需要 **JDK 25**（`java -version` 与 `javac -version` 都应是 25；只有 JRE 时 Gradle 会在配置阶段报
 `does not provide the required capabilities: [JAVA_COMPILER]`）。
+
+编译依赖 MGHttpdProvider 的 API jar（`libs/httpdprovider-1.0.jar`，已在仓库里）。重新生成它：在
+[HttpdProvider 仓库](https://github.com/MineAgent/HttpdProvider) 跑 `./gradlew build`，把
+`build/libs/httpdprovider-1.0.jar` 复制到本仓库的 `libs/`。它是 `compileOnly`，不会被打进本模组的 jar。
 
 ```bash
 ./gradlew build          # -> build/libs/mcctl-<version>.jar

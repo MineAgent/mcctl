@@ -8,10 +8,10 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Smoke test: loads the mod's client entrypoint and starts its HTTP server inside a plain JVM that
- * has the *real* Minecraft 26.2 runtime classpath (but no game). Verifies:
- * entrypoint instantiation, port binding, jdk.httpserver availability, GET manual,
- * GET /prtsc routing and POST handling.
+ * Smoke test: loads the mod's client entrypoint inside a plain JVM that has the *real* Minecraft
+ * 26.2 runtime classpath plus MGHttpdProvider's jar (but no game). Verifies: entrypoint
+ * instantiation, registration on the shared server, port binding, jdk.httpserver availability,
+ * the provider's GET / index, mcctl's GET /ctl/ manual, and the /ctl/prtsc / POST routing.
  */
 public final class LoaderSmokeTest {
 	public static void main(String[] args) throws Exception {
@@ -25,16 +25,21 @@ public final class LoaderSmokeTest {
 		mod.onInitializeClient();
 		System.out.println("ENTRYPOINT OK");
 
-		Response manual = request("GET", "/", null);
-		System.out.println("GET /        status=" + manual.status + " type=" + manual.type
+		Response index = request("GET", "/", null);
+		System.out.println("GET /         status=" + index.status + " type=" + index.type
+				+ " bytes=" + index.body.length()
+				+ " hasCtl=" + index.body.contains("/ctl"));
+
+		Response manual = request("GET", "/ctl/", null);
+		System.out.println("GET /ctl/     status=" + manual.status + " type=" + manual.type
 				+ " bytes=" + manual.body.length()
 				+ " title=" + manual.body.lines().findFirst().orElse(""));
 
-		Response post = request("POST", "/", "W 100");
-		System.out.println("POST /       status=" + post.status + " body=" + post.body.strip());
+		Response post = request("POST", "/ctl/", "W 100");
+		System.out.println("POST /ctl/    status=" + post.status + " body=" + post.body.strip());
 
-		Response shot = request("GET", "/prtsc", null);
-		System.out.println("GET /prtsc   status=" + shot.status + " type=" + shot.type
+		Response shot = request("GET", "/ctl/prtsc", null);
+		System.out.println("GET /ctl/prtsc status=" + shot.status + " type=" + shot.type
 				+ " body=" + shot.body.strip());
 
 		System.out.println("SMOKE TEST DONE");

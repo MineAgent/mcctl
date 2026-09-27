@@ -78,13 +78,6 @@ public interface InputExecutor {
 	 */
 	String mousePosition();
 
-	/**
-	 * All mods currently loaded by Fabric Loader.
-	 *
-	 * @return one {@code "<mod id> <version> <name>"} line per mod, sorted by mod id
-	 */
-	String loadedMods();
-
 	/** @return true when the game window is up and input can be delivered (also at menus) */
 	boolean isReady();
 

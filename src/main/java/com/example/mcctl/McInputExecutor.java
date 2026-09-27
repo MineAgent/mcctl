@@ -19,9 +19,6 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.input.MouseButtonInfo;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.player.LocalPlayer;
-import net.fabricmc.loader.api.FabricLoader;
-import net.fabricmc.loader.api.ModContainer;
-import net.fabricmc.loader.api.metadata.ModMetadata;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.IOException;
@@ -29,7 +26,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Comparator;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -563,22 +559,6 @@ public final class McInputExecutor implements InputExecutor {
 			LOG.log(Level.WARNING, "baritone API call failed, using chat instead: " + command, e);
 			return false;
 		}
-	}
-
-	// ------------------------------------------------------------------- mods
-
-	@Override
-	public String loadedMods() {
-		StringBuilder out = new StringBuilder();
-		FabricLoader.getInstance().getAllMods().stream()
-				.map(ModContainer::getMetadata)
-				.sorted(Comparator.comparing(ModMetadata::getId))
-				.forEach(metadata -> out
-						.append(metadata.getId()).append(' ')
-						.append(metadata.getVersion().getFriendlyString()).append(' ')
-						.append(metadata.getName().replace('\n', ' ').replace('\r', ' '))
-						.append('\n'));
-		return out.toString();
 	}
 
 	// ------------------------------------------------------------- screenshot

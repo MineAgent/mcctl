@@ -4,7 +4,7 @@
 package com.example.mcctl;
 
 /**
- * The manual returned for {@code GET /}. Kept in one place so the CLI and the docs stay in sync.
+ * The manual returned for {@code GET /ctl/}. Kept in one place so the CLI and the docs stay in sync.
  */
 public final class Help {
 	private Help() {
@@ -14,16 +14,16 @@ public final class Help {
 		return """
 				mcctl — Minecraft 客户端远程控制 (Fabric, Minecraft 26.2)
 				============================================================
-				监听地址: http://127.0.0.1:3420
+				挂载地址: http://127.0.0.1:3420/ctl
+				HTTP 服务由 MGHttpdProvider 提供, 它把各模组挂在 3420 端口的不同前缀下;
+				GET http://127.0.0.1:3420/ 列出当前所有可用的 endpoint。
 
-				  GET  /            返回本使用说明
-				  POST /            执行命令, 请求体为纯文本 (text/plain, UTF-8)
-				  GET  /prtsc       截取当前游戏画面, 直接返回 PNG 图片 (原生分辨率)
-				                    (别名: /screenshot, /prtsc.png)
-				  GET  /mods        列出所有已加载模组的 ID/版本/名称 (纯文本, 每行一条)
-				                    (别名: /modlist, /mods.txt)
-				  GET  /mouse       当前鼠标光标位置 (纯文本, 窗口像素 + GUI 缩放坐标)
-				                    (别名: /cursor, /mouse.txt)
+				  GET  /ctl/            返回本使用说明
+				  POST /ctl/            执行命令, 请求体为纯文本 (text/plain, UTF-8)
+				  GET  /ctl/prtsc       截取当前游戏画面, 直接返回 PNG 图片 (原生分辨率)
+				                        (别名: /ctl/screenshot, /ctl/prtsc.png)
+				  GET  /ctl/mouse       当前鼠标光标位置 (纯文本, 窗口像素 + GUI 缩放坐标)
+				                        (别名: /ctl/cursor, /ctl/mouse.txt)
 
 				命令语法
 				------------------------------------------------------------
@@ -72,38 +72,36 @@ public final class Help {
 				         KP_0 ... KP_9 KP_ADD KP_SUBTRACT KP_MULTIPLY KP_DIVIDE KP_ENTER
 
 				示例
-				  curl -X POST --data-binary 'W 100'            http://127.0.0.1:3420
-				  curl -X POST --data-binary 'W+Ctrl 100'       http://127.0.0.1:3420
-				  curl -X POST --data-binary 'mouse left'       http://127.0.0.1:3420
-				  curl -X POST --data-binary 'mouse move +30 -80' http://127.0.0.1:3420
-				  curl -X POST --data-binary 'mouse goto 325 123' http://127.0.0.1:3420  # 光标移到像素坐标
-				  curl -X POST --data-binary 'mouse mid'        http://127.0.0.1:3420
-				  curl -X POST --data-binary 'delay 80 W 50'    http://127.0.0.1:3420
-				  curl -X POST --data-binary '1 50'             http://127.0.0.1:3420   # 切换到第 1 格
-				  curl -X POST --data-binary 'Q 50'             http://127.0.0.1:3420   # 丢弃物品
-				  curl -X POST --data-binary 'esc'              http://127.0.0.1:3420   # 暂停菜单/关闭界面
-				  curl -X POST --data-binary 'F3'               http://127.0.0.1:3420   # 调试信息
-				  curl -X POST --data-binary 'E 50'             http://127.0.0.1:3420   # 打开/关闭背包
-				  curl -X POST --data-binary 'T 50'             http://127.0.0.1:3420   # 打开聊天框
-				  curl -X POST --data-binary 'type hello'       http://127.0.0.1:3420   # 打字进聊天框
-				  curl -X POST --data-binary 'typeEnter'        http://127.0.0.1:3420   # 发送
-				  curl -X POST --data-binary 'type hi\n'        http://127.0.0.1:3420   # 打字并回车
-				  curl -X POST --data-binary 'bt help'          http://127.0.0.1:3420   # Baritone 帮助
-				  curl -X POST --data-binary 'bt goal ~ ~ ~20'  http://127.0.0.1:3420   # 走到前方 20 格
-				  curl -X POST --data-binary 'bt stop'          http://127.0.0.1:3420   # 停止寻路
-				  curl http://127.0.0.1:3420                                             # 本说明
-				  curl http://127.0.0.1:3420/mods                                        # 已加载模组
-				  curl http://127.0.0.1:3420/mouse                                       # 当前光标位置
-				  curl -o shot.png http://127.0.0.1:3420/prtsc                           # 截图到文件
+				  curl -X POST --data-binary 'W 100'            http://127.0.0.1:3420/ctl
+				  curl -X POST --data-binary 'W+Ctrl 100'       http://127.0.0.1:3420/ctl
+				  curl -X POST --data-binary 'mouse left'       http://127.0.0.1:3420/ctl
+				  curl -X POST --data-binary 'mouse move +30 -80' http://127.0.0.1:3420/ctl
+				  curl -X POST --data-binary 'mouse goto 325 123' http://127.0.0.1:3420/ctl  # 光标移到像素坐标
+				  curl -X POST --data-binary 'mouse mid'        http://127.0.0.1:3420/ctl
+				  curl -X POST --data-binary 'delay 80 W 50'    http://127.0.0.1:3420/ctl
+				  curl -X POST --data-binary '1 50'             http://127.0.0.1:3420/ctl   # 切换到第 1 格
+				  curl -X POST --data-binary 'Q 50'             http://127.0.0.1:3420/ctl   # 丢弃物品
+				  curl -X POST --data-binary 'esc'              http://127.0.0.1:3420/ctl   # 暂停菜单/关闭界面
+				  curl -X POST --data-binary 'F3'               http://127.0.0.1:3420/ctl   # 调试信息
+				  curl -X POST --data-binary 'E 50'             http://127.0.0.1:3420/ctl   # 打开/关闭背包
+				  curl -X POST --data-binary 'T 50'             http://127.0.0.1:3420/ctl   # 打开聊天框
+				  curl -X POST --data-binary 'type hello'       http://127.0.0.1:3420/ctl   # 打字进聊天框
+				  curl -X POST --data-binary 'typeEnter'        http://127.0.0.1:3420/ctl   # 发送
+				  curl -X POST --data-binary 'type hi\n'        http://127.0.0.1:3420/ctl   # 打字并回车
+				  curl -X POST --data-binary 'bt help'          http://127.0.0.1:3420/ctl   # Baritone 帮助
+				  curl -X POST --data-binary 'bt goal ~ ~ ~20'  http://127.0.0.1:3420/ctl   # 走到前方 20 格
+				  curl -X POST --data-binary 'bt stop'          http://127.0.0.1:3420/ctl   # 停止寻路
+				  curl http://127.0.0.1:3420/ctl                                          # 本说明
+				  curl http://127.0.0.1:3420/ctl/mouse                                    # 当前光标位置
+				  curl -o shot.png http://127.0.0.1:3420/ctl/prtsc                        # 截图到文件
 
 				  # 多行 = 顺序执行的小脚本 (上一行结束后才执行下一行)
 				  curl -X POST --data-binary $'W 500\\nmouse left\\nmouse move +100 0' \\
-				       http://127.0.0.1:3420
+				       http://127.0.0.1:3420/ctl
 
 				返回
 				  200  {"ok":true,"queued":<队列长度>,"inWorld":true,"actions":["W 100"]}
-				  200  /prtsc 返回 PNG 图片 (Content-Type: image/png)
-				  200  /mods 返回模组列表纯文本 (Content-Type: text/plain)
+				  200  /ctl/prtsc 返回 PNG 图片 (Content-Type: image/png)
 				  400  命令语法错误 (text/plain, 说明出错的行)
 				  400  含 type/typeEnter 的请求: 当前没有可输入的文本框 (这类请求会同步执行完再返回)
 				  409  游戏客户端还没启动
@@ -117,9 +115,8 @@ public final class Help {
 				打开界面时, 按键/鼠标事件转发给该界面 (例如 E 关闭背包, esc 返回);
 				只有聊天框例外, 见上面的"聊天框开着时的按键路由"
 				主菜单等界面一样可以操作, 例如 mouse left 点 "单人游戏" 按钮
-				/prtsc 与游戏内 F2 用同一套取帧逻辑, 截的是当前帧, 不会写入 screenshots 目录
-				/mods 每行 "<模组ID> <版本> <名称>", 按模组 ID 排序
-				/mouse 每行 "<字段>：<值>": 光标 = 窗口像素坐标 (与截图、mouse move 的位移同一坐标系),
+				/ctl/prtsc 与游戏内 F2 用同一套取帧逻辑, 截的是当前帧, 不会写入 screenshots 目录
+				/ctl/mouse 每行 "<字段>：<值>": 光标 = 窗口像素坐标 (与截图、mouse move 的位移同一坐标系),
 				       缩放 = GUI 缩放坐标, 窗口/GUI = 尺寸, 抓取 = 是表示鼠标被游戏锁住,
 				       界面 = 当前界面类名
 				       光标 显示 "不在窗口内，请使用 mouse goto <x> <y>" 时表示指针已经移到窗口外:
@@ -129,7 +126,7 @@ public final class Help {
 				只有界面开着时 mouse goto 才生效 (它会同步游戏记录的光标位置, 同一请求里紧接着
 				mouse left 也能点中; 若同步失败则先 delay 一小段再点)
 				手点 GUI 只是兜底: 界面按钮优先 TAB/ENTER, 格子操作优先 /craft /furnace /chest /inventory
-				玩家信息(坐标/方位/背包)已拆到另一个模组 MC Advanced Info Fetch: GET http://127.0.0.1:3421/info
+				玩家信息(坐标/方位/背包)在另一个模组 AdvancedInfoFetcher 下: GET http://127.0.0.1:3420/aif/info
 				bt/# 命令优先直接调用 Baritone API (不发聊天包), 没装 Baritone 时才走聊天
 				在 shell 里用 bt 时要给整条命令加引号, 否则 bash 会把 ~ 展开成 $HOME: ./mcctl 'bt goal ~ ~ ~20'
 				F3 单独按可切换调试信息; F3+其他键 (如 F3+G) 的组合暂不支持

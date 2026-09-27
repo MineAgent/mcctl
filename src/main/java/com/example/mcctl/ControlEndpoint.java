@@ -3,74 +3,58 @@
 
 package com.example.mcctl;
 
+import com.example.httpd.HttpdProvider;
+import com.example.httpd.PathHandler;
 import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpServer;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Tiny HTTP server bound to {@code 127.0.0.1:3420}.
+ * mcctl's endpoints, mounted under the shared server's {@code /ctl} prefix.
  *
  * <ul>
- *   <li>{@code GET} returns the manual.</li>
- *   <li>{@code POST} parses the body and queues the commands.</li>
+ *   <li>{@code GET /ctl/} returns the manual.</li>
+ *   <li>{@code POST /ctl/} parses the body and queues the commands.</li>
+ *   <li>{@code GET /ctl/prtsc} returns the current frame as PNG.</li>
+ *   <li>{@code GET /ctl/mouse} returns the cursor position.</li>
  * </ul>
+ *
+ * <p>The HTTP server itself (127.0.0.1:3420) belongs to MGHttpdProvider; this class only serves
+ * the paths it is handed below the prefix, so {@code /prtsc} here means {@code /ctl/prtsc}.</p>
  */
-public final class ControlServer {
-	public static final String HOST = "127.0.0.1";
-	public static final int PORT = 3420;
+public final class ControlEndpoint implements PathHandler {
+	public static final String PREFIX = "/ctl";
+	public static final String NAME = "mcctl — 客户端远程控制 (按键/鼠标/视角/截图/Baritone)";
+
+	/** What the provider's {@code GET /} index lists for this mod. */
+	public static final List<HttpdProvider.Endpoint> ENDPOINTS = List.of(
+			new HttpdProvider.Endpoint("GET", "/ctl/", "使用说明"),
+			new HttpdProvider.Endpoint("POST", "/ctl/", "执行命令 (text/plain, UTF-8)"),
+			new HttpdProvider.Endpoint("GET", "/ctl/prtsc", "当前帧 PNG (别名 /ctl/screenshot)"),
+			new HttpdProvider.Endpoint("GET", "/ctl/mouse", "当前光标位置 (窗口像素 + GUI 缩放)"));
 
 	private static final Logger LOG = Logger.getLogger("mcctl");
 	private static final int MAX_BODY_BYTES = 64 * 1024;
 
 	private final CommandRunner runner;
 	private final InputExecutor executor;
-	private HttpServer server;
-	private ExecutorService httpPool;
 
-	public ControlServer(CommandRunner runner, InputExecutor executor) {
+	public ControlEndpoint(CommandRunner runner, InputExecutor executor) {
 		this.runner = runner;
 		this.executor = executor;
 	}
 
-	public void start() throws IOException {
-		server = HttpServer.create(new InetSocketAddress(HOST, PORT), 16);
-		server.createContext("/", this::handle);
-		httpPool = Executors.newFixedThreadPool(2, r -> {
-			Thread t = new Thread(r, "mcctl-http");
-			t.setDaemon(true);
-			return t;
-		});
-		server.setExecutor(httpPool);
-		server.start();
-		LOG.info("mcctl listening on http://" + HOST + ":" + PORT);
-	}
-
-	public void stop() {
-		if (server != null) {
-			server.stop(0);
-			server = null;
-		}
-		if (httpPool != null) {
-			httpPool.shutdownNow();
-			httpPool = null;
-		}
-	}
-
-	private void handle(HttpExchange exchange) throws IOException {
+	@Override
+	public void handle(HttpExchange exchange, String path) throws IOException {
 		try {
 			String method = exchange.getRequestMethod();
-			String path = exchange.getRequestURI().getPath();
 
 			if (isScreenshotPath(path)) {
 				if (!"GET".equals(method) && !"HEAD".equals(method) && !"POST".equals(method)) {
@@ -79,16 +63,6 @@ public final class ControlServer {
 					return;
 				}
 				handleScreenshot(exchange);
-				return;
-			}
-
-			if (isModsPath(path)) {
-				if (!"GET".equals(method) && !"HEAD".equals(method) && !"POST".equals(method)) {
-					exchange.getResponseHeaders().set("Allow", "GET, HEAD, POST, OPTIONS");
-					respond(exchange, 405, "text/plain; charset=utf-8", "method not allowed: " + method + "\n");
-					return;
-				}
-				handleMods(exchange);
 				return;
 			}
 
@@ -120,9 +94,8 @@ public final class ControlServer {
 		} catch (Exception e) {
 			LOG.log(Level.WARNING, "request failed", e);
 			respond(exchange, 500, "text/plain; charset=utf-8", "internal error: " + e + "\n");
-		} finally {
-			exchange.close();
 		}
+		// the provider closes the exchange
 	}
 
 	private static boolean isScreenshotPath(String path) {
@@ -130,15 +103,11 @@ public final class ControlServer {
 				|| "/screenshot".equals(path) || "/screenshot.png".equals(path);
 	}
 
-	private static boolean isModsPath(String path) {
-		return "/mods".equals(path) || "/mods.txt".equals(path) || "/modlist".equals(path);
-	}
-
 	private static boolean isMousePath(String path) {
 		return "/mouse".equals(path) || "/mouse.txt".equals(path) || "/cursor".equals(path);
 	}
 
-	/** {@code GET /mouse}: where the cursor is right now (window pixels + GUI-scaled units). */
+	/** {@code GET /ctl/mouse}: where the cursor is right now (window pixels + GUI-scaled units). */
 	private void handleMouse(HttpExchange exchange) throws IOException {
 		if (!executor.isReady()) {
 			respond(exchange, 409, "text/plain; charset=utf-8",
@@ -158,23 +127,7 @@ public final class ControlServer {
 		respond(exchange, 200, "text/plain; charset=utf-8", mouse == null ? "" : mouse);
 	}
 
-	/** {@code GET /mods}: every loaded mod as {@code "<id> <version> <name>"} lines. */
-	private void handleMods(HttpExchange exchange) throws IOException {
-		String mods;
-		try {
-			mods = executor.loadedMods();
-		} catch (RuntimeException e) {
-			LOG.log(Level.WARNING, "mod list failed", e);
-			respond(exchange, 500, "text/plain; charset=utf-8", "mod list failed: " + e + "\n");
-			return;
-		}
-		if (mods == null) {
-			mods = "";
-		}
-		respond(exchange, 200, "text/plain; charset=utf-8", mods);
-	}
-
-	/** {@code GET /prtsc}: capture the current frame and hand it back as a PNG. */
+	/** {@code GET /ctl/prtsc}: capture the current frame and hand it back as a PNG. */
 	private void handleScreenshot(HttpExchange exchange) throws IOException {
 		if (!executor.isReady()) {
 			respond(exchange, 409, "text/plain; charset=utf-8",

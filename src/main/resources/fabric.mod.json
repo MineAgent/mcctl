@@ -3,7 +3,7 @@
 	"id": "mcctl",
 	"version": "${version}",
 	"name": "mcctl - Client Connect",
-	"description": "HTTP control server bound to 127.0.0.1:3420 that drives the Minecraft client (keyboard, mouse, camera) from the command line. GET returns the full manual, POST executes commands.",
+	"description": "Client remote control mounted at 127.0.0.1:3420/ctl by MGHttpdProvider that drives the Minecraft client (keyboard, mouse, camera, screenshots) from the command line. GET /ctl/ returns the full manual, POST /ctl/ executes commands.",
 	"authors": [
 		"MineAgent"
 	],
@@ -17,7 +17,8 @@
 	"depends": {
 		"fabricloader": ">=0.19.5",
 		"minecraft": "~26.2",
-		"java": ">=25"
+		"java": ">=25",
+		"httpdprovider": ">=1.0"
 	},
 	"contact": {
 		"homepage": "https://github.com/MineAgent/mcctl",
