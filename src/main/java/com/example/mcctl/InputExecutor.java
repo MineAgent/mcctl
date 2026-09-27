@@ -37,12 +37,30 @@ public interface InputExecutor {
 	/**
 	 * Sends a chat message exactly like the chat box would.
 	 *
-	 * <p>Messages starting with {@code #} are Baritone commands ({@code #help}, {@code #goal ~ ~ ~20});
-	 * when Baritone is installed they are handed to its API directly, otherwise they are sent as a
-	 * normal chat message (Baritone's own chat hook then picks them up). Messages starting with
-	 * {@code /} are sent as a command.</p>
+	 * <p>Messages starting with {@code /} are sent as a command; everything else goes out as a
+	 * normal chat message. Baritone commands do <em>not</em> come through here, they use
+	 * {@link #sendBaritone(String)}.</p>
 	 */
 	void sendChat(String message);
+
+	/**
+	 * Runs a Baritone command through Baritone's API (the same path {@code #<command>} takes in the
+	 * chat box, minus the chat packet).
+	 *
+	 * <p>Only call this after {@link #baritoneUnavailableReason()} returned {@code null}: the mod
+	 * must not silently fall back to a chat message when Baritone is missing.</p>
+	 *
+	 * @param command the Baritone command without its leading {@code #} (e.g. {@code goal ~ ~ ~20})
+	 */
+	void sendBaritone(String command);
+
+	/**
+	 * Reports whether Baritone commands can run right now.
+	 *
+	 * @return {@code null} when Baritone is installed and its command manager is reachable,
+	 *         otherwise a human readable reason why {@code bt} / {@code #} commands cannot run
+	 */
+	String baritoneUnavailableReason();
 
 	/**
 	 * Types text into the text box of the screen that is open right now.

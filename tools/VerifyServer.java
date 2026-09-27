@@ -9,6 +9,11 @@ import com.example.mcctl.CommandRunner;
 import com.example.mcctl.ControlEndpoint;
 import com.example.mcctl.InputExecutor;
 
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -23,6 +28,9 @@ public final class VerifyServer {
 
 	static final class FakeExecutor implements InputExecutor {
 		final List<String> calls = new ArrayList<>();
+
+		/** Simulates Baritone being missing: {@code null} = available, otherwise the reason. */
+		volatile String baritoneUnavailable = null;
 
 		private void add(String s) {
 			synchronized (calls) {
@@ -40,6 +48,8 @@ public final class VerifyServer {
 		@Override public void mouseScroll(double a) { add("mouseScroll " + a); }
 		@Override public void releaseAll() { add("releaseAll"); }
 		@Override public void sendChat(String m) { add("chat " + m); }
+		@Override public void sendBaritone(String command) { add("baritone " + command); }
+		@Override public String baritoneUnavailableReason() { return baritoneUnavailable; }
 		@Override public String typeText(String text) { add("typeText " + text); return null; }
 		@Override public String typeEnter() { add("typeEnter"); return null; }
 
@@ -86,8 +96,105 @@ public final class VerifyServer {
 		CommandRunner runner = new CommandRunner(fake);
 		HttpdProvider.register(ControlEndpoint.PREFIX, ControlEndpoint.NAME, ControlEndpoint.ENDPOINTS,
 				new ControlEndpoint(runner, fake));
+		httpTests(fake);
 		System.out.println("READY - http://127.0.0.1:3420/ctl");
 		Thread.sleep(Long.MAX_VALUE);
+	}
+
+	/**
+	 * Exercises the Baritone availability rule end to end through the real HTTP handler: {@code bt}
+	 * and {@code #} must reach {@link InputExecutor#sendBaritone} when Baritone is available, and
+	 * must fail with 400 - without executing anything, and above all without becoming a chat
+	 * message - when it is not.
+	 */
+	private static void httpTests(FakeExecutor fake) throws Exception {
+		fake.baritoneUnavailable = null;
+		fake.calls.clear();
+		Response bt = post("bt goal ~ ~ ~20");
+		check("bt available: 200", bt.status == 200, "status=" + bt.status + " body=" + bt.body.strip());
+		check("bt available: reached sendBaritone", awaitCall(fake, "baritone goal ~ ~ ~20"),
+				"calls=" + fake.calls);
+		check("bt available: not sent as chat", !hasCall(fake, "chat #"), "calls=" + fake.calls);
+
+		fake.baritoneUnavailable = null;
+		fake.calls.clear();
+		Response hash = post("#stop");
+		check("# available: 200", hash.status == 200, "status=" + hash.status + " body=" + hash.body.strip());
+		check("# available: reached sendBaritone", awaitCall(fake, "baritone stop"), "calls=" + fake.calls);
+
+		fake.baritoneUnavailable = "Baritone is not installed (mod id 'baritone')";
+		fake.calls.clear();
+		Response missing = post("bt help");
+		Thread.sleep(200);
+		check("bt unavailable: 400", missing.status == 400,
+				"status=" + missing.status + " body=" + missing.body.strip());
+		check("bt unavailable: body explains", missing.body.contains("Baritone"),
+				"body=" + missing.body.strip());
+		check("bt unavailable: nothing executed", fake.calls.isEmpty(), "calls=" + fake.calls);
+
+		fake.calls.clear();
+		Response mixed = post("W 100\nbt stop");
+		Thread.sleep(200);
+		check("bt unavailable, mixed plan: 400", mixed.status == 400, "status=" + mixed.status);
+		check("bt unavailable, mixed plan: nothing executed", fake.calls.isEmpty(),
+				"calls=" + fake.calls);
+
+		Response hashMissing = post("#goal ~ ~ ~20");
+		check("# unavailable: 400", hashMissing.status == 400, "status=" + hashMissing.status);
+
+		fake.baritoneUnavailable = null;
+		fake.calls.clear();
+		Response chat = post("chat hello");
+		check("chat unaffected: 200", chat.status == 200, "status=" + chat.status);
+		check("chat unaffected: reached sendChat", awaitCall(fake, "chat hello"), "calls=" + fake.calls);
+
+		System.out.println(failures == 0 ? "HTTP TESTS: all passed" : "HTTP TESTS: " + failures + " FAILED");
+		if (failures > 0) {
+			System.exit(1);
+		}
+	}
+
+	private record Response(int status, String body) {
+	}
+
+	private static Response post(String body) throws Exception {
+		HttpURLConnection connection =
+				(HttpURLConnection) new URL("http://127.0.0.1:3420/ctl/").openConnection();
+		connection.setRequestMethod("POST");
+		connection.setDoOutput(true);
+		try (OutputStream out = connection.getOutputStream()) {
+			out.write(body.getBytes(StandardCharsets.UTF_8));
+		}
+		int status = connection.getResponseCode();
+		InputStream stream = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
+		String text = stream == null ? "" : new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+		return new Response(status, text);
+	}
+
+	private static boolean hasCall(FakeExecutor fake, String call) {
+		synchronized (fake.calls) {
+			return fake.calls.contains(call);
+		}
+	}
+
+	/** The command queue is asynchronous, so give the worker a moment to deliver the call. */
+	private static boolean awaitCall(FakeExecutor fake, String call) throws InterruptedException {
+		for (int i = 0; i < 50; i++) {
+			if (hasCall(fake, call)) {
+				return true;
+			}
+			Thread.sleep(20);
+		}
+		return false;
+	}
+
+	private static void check(String what, boolean ok, String detail) {
+		if (ok) {
+			System.out.println("ok   " + what);
+		} else {
+			failures++;
+			System.out.println("FAIL " + what + " -> " + detail);
+		}
 	}
 
 	private static void parserTests() {

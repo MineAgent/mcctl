@@ -11,7 +11,8 @@ import java.util.List;
  * @param kind        what to do
  * @param keys        canonical key names for {@link Kind#KEYS}
  * @param button      canonical mouse button name for {@link Kind#MOUSE_BUTTON}
- * @param message     chat text for {@link Kind#CHAT} (Baritone commands arrive as {@code #...})
+ * @param message     chat text for {@link Kind#CHAT}, or the Baritone command without its leading
+ *                    {@code #} for {@link Kind#BARITONE}
  * @param holdMs      how long keys/buttons are held down
  * @param delayMs     how long to sleep before performing this action
  * @param dx          horizontal mouse delta in pixels, or the absolute x for {@link Kind#MOUSE_GOTO}
@@ -32,8 +33,10 @@ public record Action(Kind kind, List<String> keys, String button, String message
 		MOUSE_GOTO,
 		/** turn the mouse wheel */
 		MOUSE_SCROLL,
-		/** send a chat message (Baritone commands start with '#') */
+		/** send a chat message */
 		CHAT,
+		/** run a Baritone command through Baritone's API (no leading '#') */
+		BARITONE,
 		/** type text into the focused text box of the open screen */
 		TYPE_TEXT,
 		/** press ENTER in the focused text box of the open screen */
@@ -71,6 +74,11 @@ public record Action(Kind kind, List<String> keys, String button, String message
 		return new Action(Kind.CHAT, null, null, message, 0, delayMs, 0, 0, 0.0);
 	}
 
+	/** A Baritone command without the leading {@code #} (e.g. {@code goal ~ ~ ~20}). */
+	public static Action baritone(String command, long delayMs) {
+		return new Action(Kind.BARITONE, null, null, command, 0, delayMs, 0, 0, 0.0);
+	}
+
 	/** One {@code type} chunk; typing happens on the client thread and reports failures back. */
 	public static Action typeText(String text, long delayMs) {
 		return new Action(Kind.TYPE_TEXT, null, null, text, 0, delayMs, 0, 0, 0.0);
@@ -97,8 +105,8 @@ public record Action(Kind kind, List<String> keys, String button, String message
 			case MOUSE_GOTO -> "mouse goto " + dx + " " + dy;
 			case MOUSE_SCROLL -> "mouse scroll " + (amount == Math.rint(amount)
 					? String.valueOf((long) amount) : String.valueOf(amount));
-			case CHAT -> message != null && message.startsWith("#")
-					? "bt " + message.substring(1) : "chat " + message;
+			case CHAT -> "chat " + message;
+			case BARITONE -> "bt " + message;
 			case TYPE_TEXT -> "type " + message;
 			case TYPE_ENTER -> "typeEnter";
 			case RELEASE_ALL -> "release";

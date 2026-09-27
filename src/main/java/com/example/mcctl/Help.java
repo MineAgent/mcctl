@@ -46,7 +46,7 @@ public final class Help {
 				  typeEnter                      在文本框里按回车 (发送聊天框内容)
 				  例: bt help / bt goal ~ ~ ~20 / bt stop / bt goto 100 64 200
 				  装了 Baritone 时直接调用它的 API 执行 (不经过聊天框);
-				  没装 Baritone 时退化成一条普通聊天消息 (内容是 #<命令>)。
+				  没装 Baritone 时整个请求返回 400, 不会退化成聊天消息。
 				  type/typeEnter 需要当前有一个聚焦的文本框, 否则返回 400。
 				  铁砧命名、告示牌、书与笔暂时不支持 (它们的文本框不是 EditBox, 且短期不打算支持)。
 
@@ -104,6 +104,7 @@ public final class Help {
 				  200  /ctl/prtsc 返回 PNG 图片 (Content-Type: image/png)
 				  400  命令语法错误 (text/plain, 说明出错的行)
 				  400  含 type/typeEnter 的请求: 当前没有可输入的文本框 (这类请求会同步执行完再返回)
+				  400  含 bt/# 的请求: 没有安装 (或无法调用) Baritone, 不会发出聊天消息
 				  409  游戏客户端还没启动
 				  413  请求体过大 (>64KB)
 
@@ -127,7 +128,7 @@ public final class Help {
 				mouse left 也能点中; 若同步失败则先 delay 一小段再点)
 				手点 GUI 只是兜底: 界面按钮优先 TAB/ENTER, 格子操作优先 /craft /furnace /chest /inventory
 				玩家信息(坐标/方位/背包)在另一个模组 AdvancedInfoFetcher 下: GET http://127.0.0.1:3420/aif/info
-				bt/# 命令优先直接调用 Baritone API (不发聊天包), 没装 Baritone 时才走聊天
+				bt/# 命令直接调用 Baritone API (不发聊天包); 没装 Baritone 时返回 400 (不退化成聊天消息)
 				在 shell 里用 bt 时要给整条命令加引号, 否则 bash 会把 ~ 展开成 $HOME: ./mcctl 'bt goal ~ ~ ~20'
 				F3 单独按可切换调试信息; F3+其他键 (如 F3+G) 的组合暂不支持
 				按键注入在主线程(渲染线程)执行, 不会抢占真实键鼠输入

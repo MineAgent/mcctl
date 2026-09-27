@@ -100,10 +100,14 @@ baritone.api.BaritoneAPI.getProvider().getPrimaryBaritone()
 ```
 
 也就是聊天框里 `#goal ~ ~ ~20` 内部走的同一条路，区别是不用真的发一个聊天包出去。
-没装 Baritone（或 API 调用失败）时，自动退化成发送聊天消息 `#<命令>`，由 Baritone 的聊天钩子处理
-（这种情况会和普通聊天一样出现在服务器日志里）。
 
-Baritone 的类型全部用反射调用，所以本模组**不依赖** Baritone：装不装都能用。
+没装 Baritone（或它的 API 调用失败、还没有 primary baritone 实例）时，含 `bt`/`#` 的请求
+**整个返回 400**（`bt failed: Baritone is not installed (mod id 'baritone')`），**不会**退化成一条
+聊天消息，也不会排队执行请求里的其它命令——这样调用方一眼就能看出 Baritone 不可用，
+而不是收到 200 却毫无反应。
+
+Baritone 的类型全部用反射调用，所以本模组**不依赖** Baritone：装与不装都能加载，
+只是不装时 `bt`/`#` 会明确报错。
 
 ### 支持的按键
 
@@ -121,9 +125,12 @@ Baritone 的类型全部用反射调用，所以本模组**不依赖** Baritone�
 | --- | --- |
 | 200 | `{"ok":true,"queued":<队列长度>,"actions":["W 100"]}` |
 | 400 | 语法错误（文本里会指出第几行） |
+| 400 | 含 `bt`/`#` 的请求：没有安装（或无法调用）Baritone，不会发出聊天消息 |
 | 409 | 游戏客户端还没启动 |
 | 413 | 请求体过大（>64KB） |
 | 500 | 内部错误 |
+
+`bt`/`#` 的可用性检查在请求解析后、排队前完成：Baritone 不可用时请求里**任何**命令都不会执行。
 
 ### 截图接口 `GET /ctl/prtsc`
 
@@ -209,11 +216,11 @@ MCCTL_URL=http://127.0.0.1:3420/ctl ./mcctl F3
 所以 Loom 不需要任何 mappings 配置（`build.gradle` 里没有 `mappings` 行）。
 
 ```bash
-./gradlew build          # 产物: build/libs/mcctl-1.6.1.jar
+./gradlew build          # 产物: build/libs/mcctl-1.6.2.jar
 ./gradlew runClient      # 直接启动带模组的客户端（需要正版登录/开发环境配置）
 ```
 
-安装：把 `build/libs/mcctl-1.6.1.jar` **和 [MGHttpdProvider](https://github.com/MineAgent/HttpdProvider) 的 jar**（`httpdprovider-1.0.jar`，必需）一起丢进 `.minecraft/mods/`，
+安装：把 `build/libs/mcctl-1.6.2.jar` **和 [MGHttpdProvider](https://github.com/MineAgent/HttpdProvider) 的 jar**（`httpdprovider-1.0.jar`，必需）一起丢进 `.minecraft/mods/`，
 再装 Fabric Loader 0.19.5+（不需要 Fabric API）。启动后日志里会出现：
 
 ```
@@ -260,8 +267,9 @@ Wayland.md                 Wayland 相关的调查留档（平台结论见「已
 
 ## 验证情况
 
-**已经在真实游戏里跑通**（Minecraft 26.2 + Fabric Loader 0.19.5 + Fabric API 0.160.0 + Baritone 1.19.0，
-用 `Documents/spMC/TestSave.sh` 启动，`--quickPlaySingleplayer test` 直接进存档；模组 jar 放在 `.minecraft/mods/`）：
+**已经在真实游戏里跑通**（Minecraft 26.2 + Fabric Loader 0.19.5 + Fabric API 0.160.0，
+用 `Documents/spMC/TestSave.sh` 启动，`--quickPlaySingleplayer test` 直接进存档；模组 jar 放在 `.minecraft/mods/`；
+1.6.2 的 `bt` 可用性同时验证了 **装 Baritone（1.19.0）** 和 **临时拿掉 Baritone** 两种情况）：
 
 | 测试 | 结果 |
 | --- | --- |
@@ -275,6 +283,10 @@ Wayland.md                 Wayland 相关的调查留档（平台结论见「已
 | `bt goal ~ ~ ~20` | `[Baritone] Goal: GoalBlock{x=-219,y=105,z=113}` |
 | `bt stop` | `[Baritone] ok canceled` |
 | `bt proc` / `bt help goal` | `No process in control` / goal 子命令帮助 |
+| `bt help` / `#proc`（Baritone 已装，本版 1.6.2） | 200 JSON，日志出现 `[Baritone] All Baritone commands...` / `No process in control`，命令确实走 Baritone API |
+| 把 Baritone 的 jar 从 `mods/` 拿掉后 `bt help` / `#proc` | **400** `bt failed: Baritone is not installed (mod id 'baritone')`；日志里没有 `<DSH> #help` 之类的聊天，证明**没有**退化成发消息 |
+| 无 Baritone 时 `W 100` + `bt stop`（同一请求） | 400，整条请求都不执行（按键也不会按下） |
+| 无 Baritone 时 `chat mcctl-no-baritone-test` | 200，普通聊天不受影响（日志 `<DSH> mcctl-no-baritone-test`） |
 | `chat hello from mcctl` | 聊天里出现 `<DSH> hello from mcctl` |
 | `delay 200 mouse move 0 +120` + 多行脚本 | 按顺序执行，JSON 回显规范化后的命令 |
 | `GET /ctl/mouse`（世界里） | `光标：427.0 240.0`、`抓取：是`、`界面：无`（854x480，GUI 427x240） |
@@ -293,6 +305,9 @@ Wayland.md                 Wayland 相关的调查留档（平台结论见「已
 * `./gradlew build` 干净构建通过（Loom 1.17.21 / Gradle 9.5.1 / JDK 25）。
 * **解析层**：41 个用例全过（键位、鼠标、`mouse goto`、`delay`、多行脚本、`bt`/`#`/`chat`、以及 12 种错误输入）；
   通过 `tools/VerifyServer.java` 起真实 HTTP 服务，用 `curl` 验证 GET 说明 / POST 执行 / `GET /ctl/mouse` / 400 / JSON / 命令顺序。
+* **Baritone 可用性规则**：`tools/VerifyServer.java` 里假执行器可在"有/无 Baritone"之间切换，
+  自测 `bt`/`#` 走 `sendBaritone` 而不是聊天、无 Baritone 时返回 400 且整个请求（含混排的按键）都不执行、
+  `chat` 不受影响。
 * **入口点 + 服务**：`tools/LoaderSmokeTest.java` 用打包好的 jar + 真实 26.2 运行期 classpath 加载
   `McCtlClientMod`，确认 `onInitializeClient()` 正常、端口只绑 `127.0.0.1`、无游戏时 POST 与 GET /prtsc 返回 409。
 * **`/ctl/prtsc` 传输层**：假执行器返回真 PNG，验证 `200 image/png`、magic number、别名、`HEAD`、`./mcctl prtsc 文件` 落盘。
