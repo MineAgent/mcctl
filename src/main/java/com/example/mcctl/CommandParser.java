@@ -22,22 +22,15 @@ import java.util.regex.Pattern;
  * mouse scroll 3        scroll the wheel up 3 notches
  * delay 80 W 50         wait 80 ms, then hold W for 50 ms
  * release               release everything that is currently held
- * bt goal ~ ~ ~20       run the Baritone command "goal ~ ~ ~20"
- * bt help               run the Baritone command "help"      (= "#help" in chat)
  * chat hello            send a plain chat message
  * type hello            type "hello" into the focused text box (chat box)
  * type hello\n          type "hello" and press ENTER (\n = ENTER, other backslashes are literal)
  * typeEnter             press ENTER in the focused text box (sends the message)
- * #goal ~ ~ ~20         shorthand for "bt goal ~ ~ ~20"
  * </pre>
  *
  * A body may contain several commands, separated by newlines or {@code ;}. They are executed
  * strictly in order: the second command starts after the first one finished. Lines starting with
  * {@code //} are comments.
- *
- * <p>{@code bt} / {@code #} commands need Baritone: the parser only produces
- * {@link Action.Kind#BARITONE} actions, and {@link ControlEndpoint} turns them into an HTTP 400
- * when Baritone is not available (they are never silently sent as a chat message).</p>
  */
 public final class CommandParser {
 	public static final long DEFAULT_HOLD_MS = 50L;
@@ -101,12 +94,6 @@ public final class CommandParser {
 			throw new CommandException(lineNo, "delay too large (max " + MAX_DELAY_MS + " ms)");
 		}
 
-		// "#goal ~ ~ ~20" = same as typing it into the chat box (needs Baritone)
-		if (rest.startsWith("#")) {
-			out.add(Action.baritone(baritoneCommand(rest.substring(1), lineNo), delay));
-			return;
-		}
-
 		String[] token = rest.split("\\s+");
 		String head = token[0];
 		String remainder = rest.substring(head.length()).trim();
@@ -115,11 +102,6 @@ public final class CommandParser {
 				|| head.equalsIgnoreCase("release_all") || head.equalsIgnoreCase("stop")) {
 			requireEnd(token, 1, lineNo, "release");
 			out.add(Action.releaseAll(delay));
-			return;
-		}
-
-		if (head.equalsIgnoreCase("bt") || head.equalsIgnoreCase("baritone")) {
-			out.add(Action.baritone(baritoneCommand(remainder, lineNo), delay));
 			return;
 		}
 
@@ -201,15 +183,6 @@ public final class CommandParser {
 				delayUsed = true;
 			}
 		}
-	}
-
-	/** Turns "goal ~ ~ ~20" / "#goal ~ ~ ~20" into the Baritone command "goal ~ ~ ~20". */
-	private static String baritoneCommand(String command, int lineNo) throws CommandException {
-		String trimmed = command.startsWith("#") ? command.substring(1).trim() : command.trim();
-		if (trimmed.isEmpty()) {
-			throw new CommandException(lineNo, "'bt' needs a baritone command, e.g. bt goal ~ ~ ~20");
-		}
-		return trimmed;
 	}
 
 	private static boolean startsWithWord(String text, String word) {

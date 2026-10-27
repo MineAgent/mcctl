@@ -31,7 +31,7 @@ import java.util.logging.Logger;
  */
 public final class ControlEndpoint implements PathHandler {
 	public static final String PREFIX = "/ctl";
-	public static final String NAME = "mcctl — 客户端远程控制 (按键/鼠标/视角/截图/Baritone)";
+	public static final String NAME = "mcctl — 客户端远程控制 (按键/鼠标/视角/截图)";
 
 	/** What the provider's {@code GET /} index lists for this mod. */
 	public static final List<HttpdProvider.Endpoint> ENDPOINTS = List.of(
@@ -171,17 +171,6 @@ public final class ControlEndpoint implements PathHandler {
 			return;
 		}
 
-		if (needsBaritone(plan)) {
-			// bt / # commands must never fall back to a chat message: without Baritone the whole
-			// request fails up front and nothing is queued.
-			String reason = executor.baritoneUnavailableReason();
-			if (reason != null) {
-				respond(exchange, 400, "text/plain; charset=utf-8",
-						"bt failed: " + reason + "\n");
-				return;
-			}
-		}
-
 		if (needsTextBox(plan)) {
 			// Typing reports an outcome (no text box -> 400), so that request runs synchronously on
 			// the usual single worker: the actions keep their order and we wait for the result.
@@ -208,16 +197,6 @@ public final class ControlEndpoint implements PathHandler {
 		json.append("]}\n");
 
 		respond(exchange, 200, "application/json; charset=utf-8", json.toString());
-	}
-
-	/** True when the plan runs a Baritone command, i.e. it needs Baritone to be installed. */
-	private static boolean needsBaritone(List<Action> plan) {
-		for (Action action : plan) {
-			if (action.kind() == Action.Kind.BARITONE) {
-				return true;
-			}
-		}
-		return false;
 	}
 
 	/** True when the plan types into a text box, i.e. it has an outcome worth reporting. */

@@ -125,7 +125,6 @@ public final class CommandRunner {
 			case MOUSE_GOTO -> executor.mouseGoto(action.dx(), action.dy());
 			case MOUSE_SCROLL -> executor.mouseScroll(action.amount());
 			case CHAT -> executor.sendChat(action.message());
-			case BARITONE -> executor.sendBaritone(action.message());
 			case TYPE_TEXT -> {
 				return executor.typeText(action.message());
 			}

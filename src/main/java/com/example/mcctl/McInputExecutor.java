@@ -502,7 +502,7 @@ public final class McInputExecutor implements InputExecutor {
 
 	// ------------------------------------------------------------------- chat
 
-	/** Sends plain chat, or a {@code /} command. Baritone commands use {@link #sendBaritone}. */
+	/** Sends plain chat, or a {@code /} command. */
 	@Override
 	public void sendChat(String message) {
 		onClientThread(() -> {
@@ -518,78 +518,6 @@ public final class McInputExecutor implements InputExecutor {
 				connection.sendChat(message);
 			}
 		});
-	}
-
-	// --------------------------------------------------------------- baritone
-
-	/**
-	 * Runs a Baritone command through its API.
-	 *
-	 * <p>{@code #...} is handed straight to Baritone's command manager
-	 * ({@code BaritoneAPI.getProvider().getPrimaryBaritone().getCommandManager().execute(...)}) -
-	 * exactly what typing {@code #...} into the chat box does, minus the round trip through a chat
-	 * packet. {@link #baritoneUnavailableReason()} is checked by the endpoint before the command is
-	 * queued, so a missing Baritone never turns into a chat message.</p>
-	 *
-	 * <p>Baritone types are only touched reflectively: this mod has no hard dependency on
-	 * Baritone.</p>
-	 */
-	@Override
-	public void sendBaritone(String command) {
-		onClientThread(() -> {
-			Minecraft minecraft = mc();
-			if (minecraft.player == null) {
-				LOG.warning("cannot run Baritone command, not in a world: " + command);
-				return;
-			}
-			try {
-				Object commandManager = baritoneCommandManager();
-				if (commandManager == null) {
-					LOG.warning("Baritone is unavailable, dropping command: " + command);
-					return;
-				}
-				Class.forName("baritone.api.command.manager.ICommandManager")
-						.getMethod("execute", String.class).invoke(commandManager, command);
-			} catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
-				LOG.log(Level.WARNING, "baritone API call failed: " + command, e);
-			}
-		});
-	}
-
-	/**
-	 * Resolves Baritone's {@code ICommandManager} reflectively.
-	 *
-	 * @return the command manager, or {@code null} when Baritone is installed but has no primary
-	 *         baritone instance yet
-	 * @throws ClassNotFoundException when Baritone is not installed
-	 */
-	private static Object baritoneCommandManager() throws ReflectiveOperationException {
-		Object provider = Class.forName("baritone.api.BaritoneAPI")
-				.getMethod("getProvider").invoke(null);
-		if (provider == null) {
-			return null;
-		}
-		Object baritone = Class.forName("baritone.api.IBaritoneProvider")
-				.getMethod("getPrimaryBaritone").invoke(provider);
-		if (baritone == null) {
-			return null;
-		}
-		return Class.forName("baritone.api.IBaritone")
-				.getMethod("getCommandManager").invoke(baritone);
-	}
-
-	@Override
-	public String baritoneUnavailableReason() {
-		try {
-			if (baritoneCommandManager() != null) {
-				return null;
-			}
-			return "Baritone has no primary baritone instance yet (join a world first)";
-		} catch (ClassNotFoundException | NoClassDefFoundError e) {
-			return "Baritone is not installed (mod id 'baritone')";
-		} catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
-			return "the Baritone API call failed: " + e;
-		}
 	}
 
 	// ------------------------------------------------------------- screenshot
