@@ -237,7 +237,7 @@ Wayland.md                 Wayland 相关的调查留档（平台结论见「已
 ## 验证情况
 
 **已经在真实游戏里跑通**（Minecraft 26.2 + Fabric Loader 0.19.5 + Fabric API 0.160.0，
-用 `Documents/spMC/TestSave.sh` 启动，`--quickPlaySingleplayer test` 直接进存档；模组 jar 放在 `.minecraft/mods/`）：
+用 `--quickPlaySingleplayer test` 直接进单人存档；模组 jar 放在 `.minecraft/mods/`）：
 
 | 测试 | 结果 |
 | --- | --- |
@@ -247,7 +247,7 @@ Wayland.md                 Wayland 相关的调查留档（平台结论见「已
 | `W 1500` | 截图对比：玩家确实往前走了一段 |
 | `mouse move +300 -60` | 截图对比：视角明显抬起/右转 |
 | `W+CTRL 800` | 正常返回，键位组合生效 |
-| `chat hello from mcctl` | 聊天里出现 `<DSH> hello from mcctl` |
+| `chat hello from mcctl` | 聊天里出现 `<Steve> hello from mcctl` |
 | `delay 200 mouse move 0 +120` + 多行脚本 | 按顺序执行，JSON 回显规范化后的命令 |
 | `GET /ctl/mouse`（世界里） | `光标：427.0 240.0`、`抓取：是`、`界面：无`（854x480，GUI 427x240） |
 | `GET /ctl/mouse`（暂停菜单） | `ESC` 后 `抓取：否`、`界面：PauseScreen`，光标回到窗口中心 |
