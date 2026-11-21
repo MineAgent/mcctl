@@ -9,112 +9,98 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Keyboard key names (GLFW key codes) and mouse buttons.
+ * Keyboard key names and mouse buttons.
  *
  * <p>This class is deliberately free of any Minecraft dependency so the parser can be tested
- * outside of the game.</p>
+ * outside of the game. It maps a canonical key name to the vanilla translation key
+ * ({@code key.keyboard.*}); the actual numeric code is resolved by {@link GameKeys} at runtime,
+ * because Minecraft 26.3 uses SDL scancodes. Mouse buttons follow the same rule: the semantic
+ * value (0 = left, 1 = right, 2 = middle) is parser-level, the numeric button number is
+ * resolved by {@link GameKeys}.</p>
  */
 public final class Keys {
-	/** GLFW_KEY_ESCAPE */
-	public static final int ESC = 256;
-	/** GLFW_KEY_F3 */
-	public static final int F3 = 292;
-	/** GLFW_KEY_ENTER */
-	public static final int ENTER = 257;
-	/** GLFW_KEY_TAB */
-	public static final int TAB = 258;
-	/** GLFW_KEY_BACKSPACE */
-	public static final int BACKSPACE = 259;
-	/** GLFW_KEY_DELETE */
-	public static final int DELETE = 261;
-	/** GLFW_KEY_RIGHT */
-	public static final int RIGHT = 262;
-	/** GLFW_KEY_LEFT */
-	public static final int LEFT = 263;
-	/** GLFW_KEY_DOWN */
-	public static final int DOWN = 264;
-	/** GLFW_KEY_UP */
-	public static final int UP = 265;
-	/** GLFW_KEY_HOME */
-	public static final int HOME = 268;
-	/** GLFW_KEY_END */
-	public static final int END = 269;
-	/** GLFW_KEY_KP_ENTER */
-	public static final int KP_ENTER = 335;
-	/** GLFW_KEY_E */
-	public static final int E = 69;
-	/** GLFW_KEY_Q */
-	public static final int Q = 81;
-	/** GLFW_KEY_1 (hotbar slot 1) */
-	public static final int DIGIT_1 = 49;
-	/** GLFW_KEY_9 (hotbar slot 9) */
-	public static final int DIGIT_9 = 57;
+	/** Canonical names used by the parser and by the comparison helpers. */
+	public static final String ESC = "ESC";
+	public static final String F3 = "F3";
+	public static final String ENTER = "ENTER";
+	public static final String TAB = "TAB";
+	public static final String BACKSPACE = "BACKSPACE";
+	public static final String DELETE = "DELETE";
+	public static final String RIGHT = "RIGHT";
+	public static final String LEFT = "LEFT";
+	public static final String DOWN = "DOWN";
+	public static final String UP = "UP";
+	public static final String HOME = "HOME";
+	public static final String END = "END";
+	public static final String KP_ENTER = "KP_ENTER";
+	public static final String E = "E";
+	public static final String Q = "Q";
 
-	/** canonical name -> GLFW key code */
-	private static final Map<String, Integer> CANON = new LinkedHashMap<>();
+	/** canonical name -> {@code InputConstants.getKey} id */
+	private static final Map<String, String> KEY_ID = new LinkedHashMap<>();
 	/** accepted alias -> canonical name */
 	private static final Map<String, String> ALIAS = new HashMap<>();
 
 	static {
 		for (char c = 'A'; c <= 'Z'; c++) {
-			CANON.put(String.valueOf(c), 65 + (c - 'A'));
+			KEY_ID.put(String.valueOf(c), "key.keyboard." + Character.toLowerCase(c));
 		}
 		for (char c = '0'; c <= '9'; c++) {
-			CANON.put(String.valueOf(c), 48 + (c - '0'));
+			KEY_ID.put(String.valueOf(c), "key.keyboard." + c);
 		}
 		for (int i = 1; i <= 12; i++) {
-			CANON.put("F" + i, 289 + i); // F1 = 290
+			KEY_ID.put("F" + i, "key.keyboard.f" + i);
 		}
 		for (int i = 0; i <= 9; i++) {
-			CANON.put("KP_" + i, 320 + i);
+			KEY_ID.put("KP_" + i, "key.keyboard.keypad." + i);
 		}
 
-		CANON.put("SPACE", 32);
-		CANON.put("APOSTROPHE", 39);
-		CANON.put("COMMA", 44);
-		CANON.put("MINUS", 45);
-		CANON.put("PERIOD", 46);
-		CANON.put("SLASH", 47);
-		CANON.put("SEMICOLON", 59);
-		CANON.put("EQUAL", 61);
-		CANON.put("LBRACKET", 91);
-		CANON.put("BACKSLASH", 92);
-		CANON.put("RBRACKET", 93);
-		CANON.put("GRAVE", 96);
-		CANON.put("ESC", ESC);
-		CANON.put("ENTER", 257);
-		CANON.put("TAB", 258);
-		CANON.put("BACKSPACE", 259);
-		CANON.put("INSERT", 260);
-		CANON.put("DELETE", 261);
-		CANON.put("RIGHT", 262);
-		CANON.put("LEFT", 263);
-		CANON.put("DOWN", 264);
-		CANON.put("UP", 265);
-		CANON.put("PAGEUP", 266);
-		CANON.put("PAGEDOWN", 267);
-		CANON.put("HOME", 268);
-		CANON.put("END", 269);
-		CANON.put("CAPSLOCK", 280);
-		CANON.put("SCROLLLOCK", 281);
-		CANON.put("NUMLOCK", 282);
-		CANON.put("PRINTSCREEN", 283);
-		CANON.put("PAUSE", 284);
-		CANON.put("KP_DECIMAL", 330);
-		CANON.put("KP_DIVIDE", 331);
-		CANON.put("KP_MULTIPLY", 332);
-		CANON.put("KP_SUBTRACT", 333);
-		CANON.put("KP_ADD", 334);
-		CANON.put("KP_ENTER", 335);
-		CANON.put("KP_EQUAL", 336);
-		CANON.put("LSHIFT", 340);
-		CANON.put("LCTRL", 341);
-		CANON.put("LALT", 342);
-		CANON.put("LWIN", 343);
-		CANON.put("RSHIFT", 344);
-		CANON.put("RCTRL", 345);
-		CANON.put("RALT", 346);
-		CANON.put("RWIN", 347);
+		KEY_ID.put("SPACE", "key.keyboard.space");
+		KEY_ID.put("APOSTROPHE", "key.keyboard.apostrophe");
+		KEY_ID.put("COMMA", "key.keyboard.comma");
+		KEY_ID.put("MINUS", "key.keyboard.minus");
+		KEY_ID.put("PERIOD", "key.keyboard.period");
+		KEY_ID.put("SLASH", "key.keyboard.slash");
+		KEY_ID.put("SEMICOLON", "key.keyboard.semicolon");
+		KEY_ID.put("EQUAL", "key.keyboard.equal");
+		KEY_ID.put("LBRACKET", "key.keyboard.left.bracket");
+		KEY_ID.put("BACKSLASH", "key.keyboard.backslash");
+		KEY_ID.put("RBRACKET", "key.keyboard.right.bracket");
+		KEY_ID.put("GRAVE", "key.keyboard.grave.accent");
+		KEY_ID.put(ESC, "key.keyboard.escape");
+		KEY_ID.put(ENTER, "key.keyboard.enter");
+		KEY_ID.put(TAB, "key.keyboard.tab");
+		KEY_ID.put(BACKSPACE, "key.keyboard.backspace");
+		KEY_ID.put("INSERT", "key.keyboard.insert");
+		KEY_ID.put(DELETE, "key.keyboard.delete");
+		KEY_ID.put(RIGHT, "key.keyboard.right");
+		KEY_ID.put(LEFT, "key.keyboard.left");
+		KEY_ID.put(DOWN, "key.keyboard.down");
+		KEY_ID.put(UP, "key.keyboard.up");
+		KEY_ID.put("PAGEUP", "key.keyboard.page.up");
+		KEY_ID.put("PAGEDOWN", "key.keyboard.page.down");
+		KEY_ID.put(HOME, "key.keyboard.home");
+		KEY_ID.put(END, "key.keyboard.end");
+		KEY_ID.put("CAPSLOCK", "key.keyboard.caps.lock");
+		KEY_ID.put("SCROLLLOCK", "key.keyboard.scroll.lock");
+		KEY_ID.put("NUMLOCK", "key.keyboard.num.lock");
+		KEY_ID.put("PRINTSCREEN", "key.keyboard.print.screen");
+		KEY_ID.put("PAUSE", "key.keyboard.pause");
+		KEY_ID.put("KP_DECIMAL", "key.keyboard.keypad.decimal");
+		KEY_ID.put("KP_DIVIDE", "key.keyboard.keypad.divide");
+		KEY_ID.put("KP_MULTIPLY", "key.keyboard.keypad.multiply");
+		KEY_ID.put("KP_SUBTRACT", "key.keyboard.keypad.subtract");
+		KEY_ID.put("KP_ADD", "key.keyboard.keypad.add");
+		KEY_ID.put(KP_ENTER, "key.keyboard.keypad.enter");
+		KEY_ID.put("KP_EQUAL", "key.keyboard.keypad.equal");
+		KEY_ID.put("LSHIFT", "key.keyboard.left.shift");
+		KEY_ID.put("LCTRL", "key.keyboard.left.control");
+		KEY_ID.put("LALT", "key.keyboard.left.alt");
+		KEY_ID.put("LWIN", "key.keyboard.left.win");
+		KEY_ID.put("RSHIFT", "key.keyboard.right.shift");
+		KEY_ID.put("RCTRL", "key.keyboard.right.control");
+		KEY_ID.put("RALT", "key.keyboard.right.alt");
+		KEY_ID.put("RWIN", "key.keyboard.right.win");
 
 		alias("SHIFT", "LSHIFT");
 		alias("CTRL", "LCTRL");
@@ -174,16 +160,19 @@ public final class Keys {
 		if (target != null) {
 			name = target;
 		}
-		return CANON.containsKey(name) ? name : null;
+		return KEY_ID.containsKey(name) ? name : null;
 	}
 
-	/** @return the GLFW key code of a canonical key name */
-	public static int code(String canonicalName) {
-		Integer code = CANON.get(canonicalName);
-		if (code == null) {
+	/**
+	 * @return the vanilla translation key of a canonical key name, for example
+	 *         {@code key.keyboard.w} or {@code key.keyboard.escape}
+	 */
+	public static String keyId(String canonicalName) {
+		String id = KEY_ID.get(canonicalName);
+		if (id == null) {
 			throw new IllegalArgumentException("unknown key: " + canonicalName);
 		}
-		return code;
+		return id;
 	}
 
 	/**
@@ -200,6 +189,19 @@ public final class Keys {
 			case "right", "r", "2", "rmb", "use" -> 1;
 			case "mid", "middle", "m", "3", "mmb", "wheel" -> 2;
 			default -> -1;
+		};
+	}
+
+	/**
+	 * @return the vanilla translation key of a semantic mouse button, or {@code null} for an
+	 *         unknown value
+	 */
+	public static String mouseId(int semanticButton) {
+		return switch (semanticButton) {
+			case 0 -> "key.mouse.left";
+			case 1 -> "key.mouse.right";
+			case 2 -> "key.mouse.middle";
+			default -> null;
 		};
 	}
 
@@ -220,17 +222,24 @@ public final class Keys {
 	 * <p>Vanilla skips that code path while any screen is open, so while the chat box is open mcctl
 	 * closes it first and then delivers the key through the normal (screen-less) path.</p>
 	 */
-	public static boolean isChatAction(int code) {
-		return code == E || code == Q || (code >= DIGIT_1 && code <= DIGIT_9);
+	public static boolean isChatAction(String canonicalName) {
+		if (E.equals(canonicalName) || Q.equals(canonicalName)) {
+			return true;
+		}
+		return canonicalName != null && canonicalName.length() == 1
+				&& canonicalName.charAt(0) >= '1' && canonicalName.charAt(0) <= '9';
 	}
 
 	/**
 	 * Keys that belong to the text box itself: editing, submitting or completing. While the chat box
 	 * is open they keep being forwarded to it instead of the game.
 	 */
-	public static boolean isTextEditing(int code) {
-		return code == ENTER || code == KP_ENTER || code == TAB || code == BACKSPACE || code == DELETE
-				|| code == LEFT || code == RIGHT || code == UP || code == DOWN || code == HOME || code == END;
+	public static boolean isTextEditing(String canonicalName) {
+		return ENTER.equals(canonicalName) || KP_ENTER.equals(canonicalName) || TAB.equals(canonicalName)
+				|| BACKSPACE.equals(canonicalName) || DELETE.equals(canonicalName)
+				|| LEFT.equals(canonicalName) || RIGHT.equals(canonicalName)
+				|| UP.equals(canonicalName) || DOWN.equals(canonicalName)
+				|| HOME.equals(canonicalName) || END.equals(canonicalName);
 	}
 
 	/** Short summary of the most useful key names (used in error messages / help). */

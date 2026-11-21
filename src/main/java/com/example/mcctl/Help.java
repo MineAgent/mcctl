@@ -12,7 +12,7 @@ public final class Help {
 
 	public static String text() {
 		return """
-				mcctl — Minecraft 客户端远程控制 (Fabric, Minecraft 26.2)
+				mcctl — Minecraft 客户端远程控制 (Fabric, Minecraft 26.3)
 				============================================================
 				挂载地址: http://127.0.0.1:3420/ctl
 				HTTP 服务由 MGHttpdProvider 提供, 它把各模组挂在 3420 端口的不同前缀下;
@@ -109,14 +109,17 @@ public final class Help {
 				主菜单等界面一样可以操作, 例如 mouse left 点 "单人游戏" 按钮
 				/ctl/prtsc 与游戏内 F2 用同一套取帧逻辑, 截的是当前帧, 不会写入 screenshots 目录
 				/ctl/mouse 每行 "<字段>：<值>": 光标 = 窗口像素坐标 (与截图、mouse move 的位移同一坐标系),
-				       缩放 = GUI 缩放坐标, 窗口/GUI = 尺寸, 抓取 = 是表示鼠标被游戏锁住,
-				       界面 = 当前界面类名
-				       光标 显示 "不在窗口内，请使用 mouse goto <x> <y>" 时表示指针已经移到窗口外:
-				       GLFW 只在指针位于窗口上时更新位置, 此时旧值不代表真实位置, 用绝对定位的
-				       mouse goto 把它拉回窗口内再点 (跨平台判断, 用 GLFW_HOVERED, 不看具体平台)
-				世界里鼠标被游戏锁住, 光标停在窗口中心, 此时位置没有意义;
+				       缩放 = GUI 缩放坐标, 窗口/GUI = 尺寸, 界面 = 当前界面类名
+				       光标 是 mcctl 维护的逻辑光标: 界面开着时 mouse goto / mouse move 直接修改它,
+				       mouse left/right/mid 也用它的坐标, 所以 X11 和 Wayland 的读回与点击结果一致
+				       物理指针在 X11 一定会跟着 goto 移动; 原生 Wayland 下由合成器决定
+				       (支持 wp_pointer_warp_v1 且指针已在窗口内/窗口有焦点时会移动; 否则只有
+				       逻辑光标移动, 点击仍然落在 mouse goto 指定的位置)
+				世界里光标被窗口后端收走, 停在窗口中心, 此时位置没有意义;
 				只有界面开着时 mouse goto 才生效 (它会同步游戏记录的光标位置, 同一请求里紧接着
-				mouse left 也能点中; 若同步失败则先 delay 一小段再点)
+				mouse left 也能点中); 世界里 mouse goto 不生效与窗口焦点无关
+				长按左键破坏方块与窗口焦点无关: 窗口没有焦点时 mouse left <时长> 一样会持续破坏
+				(时长要大于该方块的破坏时间)
 				手点 GUI 只是兜底: 界面按钮优先 TAB/ENTER, 格子操作优先 /craft /furnace /chest /inventory
 				玩家信息(坐标/方位/背包)在另一个模组 AdvancedInfoFetcher 下: GET http://127.0.0.1:3420/aif/info
 				F3 单独按可切换调试信息; F3+其他键 (如 F3+G) 的组合暂不支持

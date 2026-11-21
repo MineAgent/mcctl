@@ -11,8 +11,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * Runs parsed command plans on a single background thread.
@@ -22,7 +22,7 @@ import java.util.logging.Logger;
  * previous one finished). Every executor call itself hops onto the render thread.</p>
  */
 public final class CommandRunner {
-	private static final Logger LOG = Logger.getLogger("mcctl");
+	private static final Logger LOG = LogManager.getLogger("mcctl");
 
 	private final InputExecutor executor;
 	private final ExecutorService worker;
@@ -94,11 +94,11 @@ public final class CommandRunner {
 			try {
 				String failure = apply(action);
 				if (failure != null) {
-					LOG.warning("failed to execute " + action.describe() + ": " + failure);
+					LOG.warn("failed to execute " + action.describe() + ": " + failure);
 					return failure;
 				}
 			} catch (RuntimeException e) {
-				LOG.log(Level.WARNING, "failed to execute " + action.describe(), e);
+				LOG.warn("failed to execute " + action.describe(), e);
 			}
 		}
 		return null;

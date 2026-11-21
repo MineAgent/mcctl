@@ -1,4 +1,4 @@
-# mcctl — Minecraft 客户端远程控制模组（Fabric / Minecraft 26.2）
+# mcctl — Minecraft 客户端远程控制模组（Fabric / Minecraft 26.3）
 
 把控制接口挂在 **MGHttpdProvider** 的共享 HTTP 服务（`127.0.0.1:3420`）的 `/ctl` 前缀下：
 
@@ -133,34 +133,31 @@ curl -X POST --data-binary 'mouse goto 325 123' http://127.0.0.1:3420/ctl
 缩放：162.5 61.5       # GUI 缩放坐标（Screen 事件用的那套）
 窗口：854x480          # 窗口像素尺寸
 GUI：427x240           # GUI 缩放尺寸
-抓取：否               # 是 = 鼠标被游戏锁住（在世界里），此时光标停在窗口中心，位置没有意义
 界面：CraftingScreen   # 当前打开的界面类名；无 = 在世界里
 ```
 
-指针被移到窗口外时，`光标` / `缩放` 两行会换成：
-
-```
-光标：不在窗口内，请使用 mouse goto <x> <y>
-```
-
-* 为什么需要这一行：GLFW **只在指针位于窗口内容区上方时**才投递移动事件，所以指针一旦离开窗口,
-  `MouseHandler#xpos/ypos` 就冻结在最后一个窗口内像素上——看起来像个合法坐标，其实已经不作数了
-  （实测：窗口在 (653,515)/854x480，把指针扔到 (200,200) 或 (2100,1300)，`/ctl/mouse` 都还报 `427,240`）。
-* 判断用的是 `GLFW.glfwGetWindowAttrib(window, GLFW_HOVERED)`，语义就是「光标是否在窗口内容区上方」，
-  **X11 / Wayland / Windows / macOS 各后端都由 GLFW 统一实现，代码里没有任何平台分支**
-  （Linux 上的 MC 固定走 X11/Xwayland，实测也只做过这一条；详见下面的「已知限制」）。
-  不用 `glfwGetCursorPos` 是因为它有平台差异：X11 会返回负数/超界坐标，Wayland 客户端根本拿不到全局指针位置。
-* **界面开着时**（`抓取：否`）`mouse goto <x> <y>` 把光标放到窗口像素坐标，可以直接对着 `/ctl/prtsc` 截图量出来的
-  位置点：`mouse goto 325 123` + `mouse left` 可以放在同一个请求里。指针在窗口外时也照样管用——
-  绝对定位是自纠正的，会把指针一起拉回窗口内（实测从窗口外 `goto 321 202`，物理指针回到 `(974,717)` =
-  窗口原点 `(653,515)` + 目标，点击命中）。
-* **在世界里**（`抓取：是`）GLFW 把光标禁用了，`mouse goto` 不生效（转视角要用 `mouse move`），
-  `/ctl/mouse` 报告的只是窗口中心。
+* `光标` 是 mcctl 维护的**逻辑光标**：界面开着时 `mouse goto` / `mouse move` 直接修改它，
+  `mouse left/right/mid` 的事件坐标也来自它。因此 X11 和 Wayland 下读回的位置、点击命中的位置
+  完全一致，不再有“不可用 / 不在窗口内”的平台分支。
+* 物理指针：X11/Xwayland 下 `SDL_WarpMouseInWindow` 一定会移动它；原生 Wayland 下 SDL 通过
+  `wp_pointer_warp_v1`（或 pointer confinement）请求合成器移动，**窗口有 pointer focus 时才生效**
+  （GNOME/Mutter 51 已支持）。指针已经在窗口内时可以在窗口内绝对定位；指针在窗口外时 Wayland
+  拿不到该 surface 的 enter serial，**无法把物理指针从窗口外拉进来**。这些情况下逻辑光标仍然工作：
+  `mouse goto` 之后的 `/ctl/mouse` 和同一请求里的 `mouse left` 都按目标坐标执行。
+* `mouse goto` 之后会同步 `MouseHandler#xpos/ypos` 并调用当前 `Screen#mouseMoved`，所以悬停高亮和
+  紧随其后的点击都立即使用新坐标。
+* **界面开着时** `mouse goto <x> <y>` 把光标放到窗口像素坐标，可以直接对着 `/ctl/prtsc` 截图量出来的
+  位置点：`mouse goto 325 123` + `mouse left` 可以放在同一个请求里。指针在窗口外时也照样管用：
+  绝对定位会同步逻辑坐标，点击按目标位置命中。
+* **在世界里**（没有界面）窗口后端把光标收走、停在窗口中心，`mouse goto` 不生效（转视角要用
+  `mouse move`），`/ctl/mouse` 报告的只是窗口中心。**这跟窗口有没有焦点无关**。
 * 坐标会被夹到窗口范围内（`0..窗口-1`）。
-* 一次请求里只放一个光标移动：GLFW 把新位置回传是异步的，同一 tick 里的第二次 `glfwSetCursorPos`
+* 一次请求里只放一个光标移动：后端把新位置回传是异步的，同一 tick 里的第二次 warp
   在 Xwayland 下会丢。`mouse goto` + `mouse left`（同一请求）没问题，两个移动叠在一起不要写。
 * **手点 GUI 只是兜底手段**：界面按钮优先 `TAB`/`ENTER`，格子操作优先 Craft Command 的
   `/craft` `/furnace` `/chest` `/inventory`。`/ctl/mouse` + `mouse goto` 是在**没有 Craft Command** 时才用的。
+* **长按左键破坏方块与窗口焦点无关**：窗口没有焦点时 `mouse left <时长>` 一样会持续破坏
+  （`时长` 要大于该方块用当前工具的破坏时间）。
 
 ## 命令行工具
 
@@ -181,36 +178,38 @@ MCCTL_URL=http://127.0.0.1:3420/ctl ./mcctl F3
 
 ## 构建
 
-需要 JDK 25（Minecraft 26.2 要求）。Minecraft 26.1 起官方代码不再混淆，
+需要 JDK 25（Minecraft 26.3 要求）。Minecraft 26.1 起官方代码不再混淆，
 所以 Loom 不需要任何 mappings 配置（`build.gradle` 里没有 `mappings` 行）。
 
 ```bash
-./gradlew build          # 产物: build/libs/mcctl-1.6.3.jar
+./gradlew build          # 产物: build/libs/mcctl-2.0.0.jar
 ./gradlew runClient      # 直接启动带模组的客户端（需要正版登录/开发环境配置）
 ```
 
-安装：把 `build/libs/mcctl-1.6.3.jar` **和 [MGHttpdProvider](https://github.com/MineAgent/HttpdProvider) 的 jar**（`httpdprovider-1.0.jar`，必需）一起丢进 `.minecraft/mods/`，
-再装 Fabric Loader 0.19.5+（不需要 Fabric API）。启动后日志里会出现：
+安装：把 `build/libs/mcctl-2.0.0.jar` **和 [MGHttpdProvider](https://github.com/MineAgent/HttpdProvider) 的 jar**（`httpdprovider-1.0.jar` 或更高，必需）一起丢进 `.minecraft/mods/`，
+再装 Fabric Loader 0.20.1+（不需要 Fabric API）。启动后日志里会出现：
 
 ```
 MGHttpdProvider listening on http://127.0.0.1:3420
 registered /ctl (mcctl — 客户端远程控制 ...)
 ```
 
-## 实现要点（Minecraft 26.2）
+## 实现要点（Minecraft 26.3）
 
 | 需求 | 实现 |
 | --- | --- |
-| 按键 | `KeyMapping.click(key)` + `KeyMapping.set(key, down)`，按 GLFW 键码投递（`InputConstants.Type.KEYSYM`） |
-| 鼠标按键 | `InputConstants.Type.MOUSE` + 同样的 `KeyMapping` 路径（左键=攻击、右键=使用、中键=选取方块） |
+| 按键 | `KeyMapping.click(key)` + `KeyMapping.set(key, down)`；按键名先映射到 `key.keyboard.*`，再由 `InputConstants.getKey` 解析成 SDL scancode。转发给界面时 `KeyEvent` 需要两个码：scancode（`key()`，按键映射用）和 SDL keycode（`shortcutKey()`，`EditBox`/方向键/TAB 用），后者由 `GameKeys` 调 `SDL_GetKeyFromScancode` 取得 |
+| 鼠标按键 | 同样走 `InputConstants.getKey("key.mouse.*")` + `KeyMapping` 路径（左键=攻击、右键=使用、中键=选取方块）；按钮号由 `InputConstants` 解析，不写死 0/1/2 |
+| 长按左键破坏（无焦点） | 原版 `Minecraft#handleKeybinds()` 只在 `MouseHandler#isMouseGrabbed()` 为真时调用 `continueAttack`，而抓取只在窗口有焦点时才发生；`MinecraftMixin` 用 `@Redirect` 把这一处判定改成「已抓取 **或** mcctl 正按住左键」（`SyntheticInput`），所以窗口没有焦点也能持续破坏。其余原版条件（无界面、`keyAttack.isDown()`）不变 |
 | 鼠标移动 | 复刻 `MouseHandler#turnPlayer` 的灵敏度公式后调用 `Entity#turn`（视角旋转同时会被同步到服务器） |
 | 滚轮 | 界面打开时 `Screen#mouseScrolled`，否则反射调用 `MouseHandler#onScroll` |
 | `esc` | 有界面时转发给界面（`Screen#keyPressed` 会返回上一级），否则 `Minecraft#pauseGame` |
 | `F3` | `Minecraft#debugEntries.toggleDebugOverlay()`（原版这段逻辑在私有的 `KeyboardHandler#keyPress` 里） |
 | 打开界面时 | 键盘/鼠标事件转发给当前 `Screen`，所以在背包里也能点格子、按 `E` 关闭 |
 | `/ctl/prtsc` 截图 | `Screenshot.takeScreenshot(gameRenderer.mainRenderTarget(), image -> ...)` 取帧，`NativeImage.writeToFile` 编码成 PNG 后读回内存返回（临时文件用完即删） |
-| `/ctl/mouse` | `MouseHandler#xpos/ypos`（窗口像素）+ `getScaledXPos/YPos`（GUI 缩放）+ `isMouseGrabbed` + `Window` 尺寸 + 当前 `Screen` 类名，全部在渲染线程读 |
-| `mouse goto` | `GLFW.glfwSetCursorPos(窗口像素)`；随后反射同步 `MouseHandler#xpos/ypos`（复刻 `MouseHandler#releaseMouse` 的做法），否则同一请求里紧接着的点击会用旧坐标 |
+| `/ctl/mouse` | `CursorTracker` 的逻辑光标（窗口像素，从 `MouseHandler` 的合法值同步）+ `MouseHandler.getScaledXPos/YPos`（GUI 缩放）+ `Window` 尺寸 + 当前 `Screen` 类名，全部在渲染线程读 |
+| `mouse goto` | 更新 `CursorTracker` → `WindowCompat` 调 `SDL_WarpMouseInWindow`（Wayland 下由合成器决定是否真正移动）→ 反射同步 `MouseHandler#xpos/ypos` → `Screen#mouseMoved`；逻辑坐标保证同一请求里紧接着的点击使用新位置 |
+| Wayland resync | `MouseHandlerMixin` 在原生 Wayland 且无 pointer focus 时跳过 `resyncMousePosition`，避免 `SDL_GetGlobalMouseState` 返回 0,0 后被减去窗口位置得到负坐标 |
 | 挂载 | `HttpdProvider.register("/ctl", ...)`（MGHttpdProvider 的 API，`compileOnly libs/httpdprovider-1.0.jar`）；HTTP 服务、`GET /` 索引和关游戏时的退出处理都在 provider 里 |
 
 线程模型：HTTP 线程 → 单线程队列（保证顺序）→ `Minecraft.execute()` 到渲染线程执行输入。
@@ -226,75 +225,142 @@ src/main/java/com/example/mcctl/
   CommandRunner.java     单线程顺序执行 + 计时
   InputExecutor.java     输入抽象
   McInputExecutor.java   把动作变成真实游戏输入
-  Keys.java              按键名 → GLFW 键码
+  Keys.java              按键名 → 键标识（`key.keyboard.*`），保持无 Minecraft 依赖
+  GameKeys.java          把键标识解析成 InputConstants 的键/按钮号
+  SyntheticInput.java    mcctl 正用合成事件按住的按钮（给 mixin 用）
+  WindowCompat.java      SDL 光标移动 / 鼠标焦点 / Wayland 判断（反射）
+  CursorTracker.java     mcctl 的逻辑光标（窗口像素 + GUI 缩放）
+  mixin/
+    MinecraftMixin.java   无窗口焦点时让 handleKeybinds 继续破坏方块
+    MouseHandlerMixin.java  Wayland 无焦点时跳过 MouseHandler 的 resync
   Help.java              GET /ctl/ 返回的使用说明
 tools/VerifyServer.java    脱离游戏验证 HTTP + 解析层（假执行器）
-tools/LoaderSmokeTest.java 用真实 26.2 运行期 classpath 验证入口点 + HTTP 服务
+tools/LoaderSmokeTest.java 用真实 26.3 运行期 classpath 验证入口点 + HTTP 服务
+tools/KeyMapCheck.java     用运行期 classpath 检查所有键名/鼠标键都能被 InputConstants 解析
 mcctl                      命令行封装脚本
-Wayland.md                 Wayland 相关的调查留档（平台结论见「已知限制」）
+Wayland.md                 Wayland 下 SDL 的光标行为说明与自测步骤
 ```
 
 ## 验证情况
 
-**已经在真实游戏里跑通**（Minecraft 26.2 + Fabric Loader 0.19.5 + Fabric API 0.160.0，
-用 `--quickPlaySingleplayer test` 直接进单人存档；模组 jar 放在 `.minecraft/mods/`）：
+**已经在真实游戏里跑通**（Minecraft 26.3 + Fabric Loader 0.20.1，
+用 `--quickPlaySingleplayer test` 直接进单人存档；模组 jar 放在 `.minecraft/mods/`）。
+
+### 实测（2026-11-17）
+
+同一份 `mcctl-2.0.0-pre1.jar`，Minecraft 26.3 + Fabric Loader 0.20.1（Linux，游戏目录
+`.minecraft/versions/26.3-Fabric`，Fabric API 0.166.2+26.3 与 8 个功能模组正常加载），`/ctl/` 注册成功，
+日志里没有 `NoClassDefFoundError`、也没有窗口后端缺失告警。分别跑了 SDL 的两个视频后端：
+
+* **原生 Wayland**（SDL 默认驱动 `wayland`）：`/ctl/mouse`、`mouse goto`、`mouse move`、点击与 X11 逐行一致；
+  没有前台焦点/指针不在窗口内时物理指针不动（SDL 无法取得 enter serial），但逻辑坐标和点击仍然正确。
+* **X11/Xwayland**（`SDL_VIDEODRIVER=x11`）：`mouse goto` 会真正移动物理指针（xdotool 实测窗口原点 +(目标)）。
 
 | 测试 | 结果 |
 | --- | --- |
-| 启动 | 日志出现 `MGHttpdProvider listening on http://127.0.0.1:3420` 和 `mcctl ... registered /ctl`，`ss -ltn` 看到 `127.0.0.1:3420` 在监听 |
-| `GET /ctl/` | 200，返回完整中文说明 |
-| `GET /ctl/prtsc` | 200 `image/png`，854x480（窗口原生分辨率）、306KB、0.14s；画面就是存档里的丛林场景 |
-| `W 1500` | 截图对比：玩家确实往前走了一段 |
-| `mouse move +300 -60` | 截图对比：视角明显抬起/右转 |
-| `W+CTRL 800` | 正常返回，键位组合生效 |
-| `chat hello from mcctl` | 聊天里出现 `<Steve> hello from mcctl` |
-| `delay 200 mouse move 0 +120` + 多行脚本 | 按顺序执行，JSON 回显规范化后的命令 |
-| `GET /ctl/mouse`（世界里） | `光标：427.0 240.0`、`抓取：是`、`界面：无`（854x480，GUI 427x240） |
-| `GET /ctl/mouse`（暂停菜单） | `ESC` 后 `抓取：否`、`界面：PauseScreen`，光标回到窗口中心 |
-| `mouse goto 100 100` | 读回 `光标：100.0 100.0`、`缩放：50.0 50.0` |
-| `mouse goto 321 202` + `mouse left`（同一请求） | 点中暂停菜单的「进度」按钮，`界面：AdvancementsScreen` |
-| `mouse goto 427 154` + `mouse left` | 点中「回到游戏」，回到世界（`抓取：是`、`界面：无`）；分成两个请求也成立 |
-| `mouse goto 9999 9999` | 夹到窗口边界：`光标：853.0 479.0` |
-| 光标被移到窗口外 | 窗口在 (653,515)/854x480，指针扔到 (200,200) 或 (2100,1300) 后 `/ctl/mouse` 输出 `光标：不在窗口内，请使用 mouse goto <x> <y>`；此时 `mouse left` 用旧值点不中，`mouse goto 321 202` + `mouse left` 命中（`界面：AdvancementsScreen`），物理指针回到 (974,717) |
-| `mouse move +50 +30`（界面里，已知起点） | 从 300,300 移到 350,330，读回稳定 |
-| 正常退出（旧行为） | 关窗口后 15s 必现 `Client shutdown from post-main` 崩溃报告（post-main 看门狗），退出码 `-8` |
-| 正常退出（本版） | 关窗口后日志依次出现 `client exited, stopping the mcctl server`、`exiting the JVM so the post-main shutdown watchdog cannot fire`；进程退出码 `0`，`crash-reports/` 不新增文件 |
+| 启动 | 日志出现 `MGHttpdProvider listening`、`registered /ctl`；`127.0.0.1:3420` 监听；Wayland/X11 两种 driver 都通过 |
+| `GET /ctl/` | 200，完整中文说明（标题为 Minecraft 26.3） |
+| `GET /ctl/prtsc` | 200 `image/png`；窗口 854x480，全屏时 2160x1440 |
+| 移动 | `W` / `W+CTRL` / `LSHIFT+W` / `SPACE` 均让坐标或高度变化；创造模式飞行升降也正常 |
+| `mouse move` | `+300 -60` 后 `yaw 90 → 135`、`pitch 12 → 3` |
+| 鼠标键 | `mouse left` 把准星下的 grass block 打掉（目标变成 dirt）；`mouse right` 放下 `oak_planks`（目标变成该方块）；`mouse mid` 正常返回 |
+| `E` | 打开/关闭 `CreativeModeInventoryScreen`；搜索页签下原版会吃掉 E，属原版行为 |
+| `ESC` | 进入 `PauseScreen`，再按回到世界 |
+| TAB/ENTER | 暂停菜单 `TAB`×2 + `ENTER` 打开 `AdvancementsScreen`（keycode 修复生效） |
+| 聊天编辑 | `T` + `type hello` + `BACKSPACE` + `LEFT` + `type X` + `typeEnter` → `<DSH> helXl`；`type abc` + `BACKSPACE` + `typeEnter` → `<DSH> ab` |
+| 打字/聊天 | `type hello-263`、`typeEnter`、`chat /time set day`、`type hi\n` 全部生效 |
+| 聊天路由 | 聊天框开着时 `E` 关聊天并开背包；`1` 换快捷栏；`Q` 丢弃（planks 4→3）；`W` 边打字边移动 |
+| GUI 光标 | `mouse goto 100 100` 读回 `100.0 100.0` / 缩放 `50.0 50.0`；`goto 9999 9999` 夹到 `853.0 479.0`；界面内 `mouse move +50 +30` 读回 `150.0 130.0` |
+| GUI 点击 | `mouse goto` + 同请求 `mouse left` 点中创造物品栏的搜索页签；用同一方式点「保存并退回到标题屏幕」和「退出游戏」走完正常退出 |
+| 滚轮 | 世界里 `mouse scroll` 切换快捷栏（1→9→8→9）；GUI 里滚动创造物品列表和聊天记录（列表在顶部时正数会被夹住，用负数验证） |
+| `F3` | 截图中出现调试信息，再按一次关闭 |
+| `/ctl/mouse`（X11） | 暂停后 `mouse goto 100 100` 把物理指针移到窗口原点 +(100,100)，`goto 321 202` 与界面内 `+50 +30` 都按像素精确移动；分辨率 854x480，GUI 427x240 |
+| `/ctl/mouse`（Wayland） | 与 X11 相同的数字输出；`mouse goto 100 100` → `100.0 100.0`，`move +50 +30` → `150.0 130.0`，`goto 9999 9999` → `853.0 479.0`，`goto 321 202` + click 打开 `AdvancementsScreen` |
+| 脚本/错误 | 多行、`delay`、`release` 正常；未知键 / 坏 JSON / 空请求 400，超大请求 413 |
+| 正常退出 | 从暂停菜单点「保存并退回到标题屏幕」→「退出游戏」，日志出现 `client exited, stopping the HTTP server`，退出码 `0`，端口释放，`crash-reports/` 不新增 |
+
+本轮发现并修掉的两个问题：
+
+1. **界面编辑键不生效**：26.3 的 `KeyEvent` 第二个分量是 SDL keycode（`shortcutKey()`），`EditBox`
+   和 `Screen` 用它识别退格/Delete/方向键/Home/End/TAB；只传 scancode 会导致 `BACKSPACE`、方向键、
+   TAB 导航全部失效（打字和 Enter 走 `key()`，所以看起来“部分正常”）。`GameKeys#keycode` 现在用
+   `SDL_GetKeyFromScancode` 取到 keycode，`McInputExecutor` 统一构造
+   `new KeyEvent(scancode, keycode, 0)`。
+2. **Wayland 无焦点时的坐标污染**：`MouseHandler#resyncMousePosition` 用
+   `SDL_GetGlobalMouseState` + `SDL_GetWindowPosition` 计算光标；Wayland 无 pointer focus 时
+   SDL 返回 `0,0`，相减后得到 `-653,-480` 这类值。现在 `MouseHandlerMixin` 在原生 Wayland 且无焦点时
+   跳过 resync；`CursorTracker` 也只采纳窗口内的值，因此 `/ctl/mouse` 始终是合法数字，且 X11/Wayland
+   一致。
+
+### 实测（2026-11-21）：窗口无焦点时的长按左键
+
+Minecraft 26.3 + Fabric Loader 0.20.1，无头 X11（`xvfb-run` + Mesa llvmpipe；SDL3 下要设
+`SDL_VIDEO_FORCE_EGL=1`），`--quickPlaySingleplayer test` 进生存存档。用
+`xdotool windowfocus <root>` 让游戏窗口失焦，再 `ESC` 开/关暂停菜单把鼠标抓取丢掉
+（`grabMouse()` 只在窗口有焦点时生效），此时世界里没有界面。同一流程跑改前/改后两个 jar：
+
+| 测试 | `2.0.0-pre1`（改前） | `2.0.0`（改后） |
+| --- | --- | --- |
+| 无焦点、世界、生存：`mouse left 2500` 打泥土 | **不破坏**（目标方块仍是 `dirt`） | 打掉（目标方块变成下面的 `stone`） |
+| 无焦点、世界、生存：给铁镐后 `mouse left 2000` 打石头 | — | 打掉（目标方块变 `未选中`） |
+| 有焦点（原版抓取恢复）同样长按 | — | 打掉 |
+| 创造模式 `mouse left 100`（瞬破） | — | 正常 |
+| 无焦点时 GUI 点击（`mouse goto` + `mouse left` 点暂停菜单按钮） | 正常 | 正常 |
+| 世界里 `mouse goto 100 100` | 不生效 | 不生效（现在与焦点无关） |
+
+退出走暂停菜单「保存并退回到标题屏幕」→「退出游戏」：退出码 0，日志有
+`client exited, stopping the HTTP server`，`crash-reports/` 不新增；日志里没有 mixin 注入错误
+（`MinecraftMixin` 生效）。
 
 其它验证：
 
 * `./gradlew build` 干净构建通过（Loom 1.17.21 / Gradle 9.5.1 / JDK 25）。
 * **解析层**：键位、鼠标、`mouse goto`、`delay`、多行脚本、`chat` 以及错误输入用例全过；
   通过 `tools/VerifyServer.java` 起真实 HTTP 服务，用 `curl` 验证 GET 说明 / POST 执行 / `GET /ctl/mouse` / 400 / JSON / 命令顺序。
-* **入口点 + 服务**：`tools/LoaderSmokeTest.java` 用打包好的 jar + 真实 26.2 运行期 classpath 加载
+* **入口点 + 服务**：`tools/LoaderSmokeTest.java` 用打包好的 jar + 真实 26.3 运行期 classpath 加载
   `McCtlClientMod`，确认 `onInitializeClient()` 正常、端口只绑 `127.0.0.1`、无游戏时 POST 与 GET /prtsc 返回 409。
+* **键名解析**：`tools/KeyMapCheck.java` 在 26.3 的真实 classpath 上遍历 `Keys` 的 104 个键名和 3 个鼠标键，
+  全部能由 `InputConstants.getKey` 解析（样本 `W=26 ESC=41 mouse_left=1`）。
 * **`/ctl/prtsc` 传输层**：假执行器返回真 PNG，验证 `200 image/png`、magic number、别名、`HEAD`、`./mcctl prtsc 文件` 落盘。
-* **游戏内 API**：所有调用都对着 `minecraft_26.2_client.jar` 反编译核对过（`javap`）：
+* **游戏内 API**：所有调用都对着 `minecraft_26.3` 反编译核对过（`javap`）：
   `KeyMapping.click/set`、`MouseHandler#turnPlayer` 的灵敏度公式、`Screen#keyPressed` 的 esc 处理、
   `handleGlobalKeyPress` 的顺序、`Screenshot.takeScreenshot(RenderTarget, Consumer<NativeImage>)`、
-  `MouseHandler#xpos/getScaledXPos/isMouseGrabbed`、`MouseHandler#releaseMouse` 里 `glfwSetCursorPos`
-  之后直接写 `xpos/ypos` 的做法、`AbstractContainerScreen#mouseClicked` 用事件坐标找格子，
-  `GLFW#glfwGetWindowAttrib(GLFW_HOVERED)` 判断指针是否在窗口内容区上方（跨平台），
-  `ClientPacketListener#sendChat/sendCommand`。
+  `MouseHandler#xpos/getScaledXPos/isMouseGrabbed`、`MouseHandler#releaseMouse` 里 warp
+  之后直接写 `xpos/ypos` 的做法、`MouseHandler#resyncMousePosition` 的全局坐标算法、
+  `AbstractContainerScreen#mouseClicked` 用事件坐标找格子、`SDL_WarpMouseInWindow`、
+  26.3 的 `KeyEvent#key`（scancode，`KeyMapping` 用）与 `#shortcutKey`（keycode，`EditBox`/`Screen` 的编辑键和
+  TAB/方向键导航用）、`SDL_GetKeyFromScancode`、`SDL_GetCurrentVideoDriver`、
+  `InputConstants.getKey("key.keyboard.*")` 返回对应键码、`ClientPacketListener#sendChat/sendCommand`。
 
 已知限制：
 
 * 打字（`type` / `typeEnter`）只支持**聚焦的 `EditBox`**：聊天框可以，**铁砧命名、告示牌、书与笔不支持**
-  （它们在 26.2 里不是 `EditBox`，要逐界面特判，短期不打算做）。没有可输入的文本框时返回 400。
+  （它们不是 `EditBox`，要逐界面特判，短期不打算做）。没有可输入的文本框时返回 400。
+  创造模式物品栏的搜索框走 `isInputCaptured()` 而不是 `getFocused()`，本版的 `type` 不会往里打字。
 * `type` 只认一个转义 `\n`（回车），其余反斜杠按字面处理。
 * `F3` 单独按可以切换调试信息，但 `F3+X` 组合键（如 `F3+G` 区块边界）不生效——原版这段逻辑在
   私有的 `KeyboardHandler#keyPress` 里，本模组只公开复刻了 `F3` 的开关行为。
 * 游戏内滚轮走反射调用 `MouseHandler#onScroll`；若将来版本改名，`mouse scroll` 会静默失效（其他命令不受影响）。
-* `mouse goto` 靠反射写 `MouseHandler#xpos/ypos`，字段一旦改名就只剩 `glfwSetCursorPos` 本身的效果
-  （真 X11 下光标照样会动，只是同一请求里的点击可能用到旧坐标）；`/ctl/mouse` 读的是公开的 `xpos()`，不受影响。
-* 界面里的相对移动 `mouse move` 依赖 GLFW 的光标回调；Xwayland 下 warp 不保证产生回调，所以 GUI 定位请用
+* `mouse goto` 靠反射写 `MouseHandler#xpos/ypos`；字段一旦改名，逻辑光标和点击坐标仍然正确，
+  只是游戏内部的悬停高亮可能滞后。
+* **长按左键破坏**：靠 `MinecraftMixin` 改写 `handleKeybinds()` 里的抓取判定；如果将来 26.x 改了
+  `Minecraft#handleKeybinds` 里 `isMouseGrabbed()` 的调用形态，mixin 会在启动时报错（`defaultRequire: 1`），
+  而不是静默退回“只有窗口有焦点才能破坏”。
+* 同一个 tick 里先关界面、再立刻发 `mouse left`（例如 `ESC\nmouse left 2000`）时，原版 `missTime`
+  会吞掉这一整段长按；分成两个请求（或中间加 `delay 50`）即可。
+* **原生 Wayland 的物理指针**：`SDL_WarpMouseInWindow` 通过 `wp_pointer_warp_v1`（或 pointer
+  confinement）请求合成器移动，只有在窗口有 pointer focus 且合成器支持时才生效（GNOME/Mutter 51 支持）。
+  指针在窗口外时没有该 surface 的 enter serial，warp 会被合成器拒绝，**物理指针无法从窗口外进入**；
+  不支持的合成器或窗口失焦时也是同样结果。但 `/ctl/mouse`、`mouse goto`、点击坐标始终与 X11 一致。
+* **Wayland resync**：`MouseHandler#resyncMousePosition` 在无焦点时会把 SDL 的 `0,0` 当全局坐标；
+  `MouseHandlerMixin` 在这种情况跳过它，避免 `MouseHandler#xpos/ypos` 被写成负值。
+* 界面里的相对移动 `mouse move` 依赖窗口后端的光标回调；Xwayland 下 warp 不保证产生回调，所以 GUI 定位请用
   绝对坐标的 `mouse goto`，一次请求只放一个光标移动。
-* **平台：Linux 上的 Minecraft 永远跑在 X11/Xwayland 下**，所以 `/ctl/mouse`、`mouse goto` 实际只有这一条
-  路径。26.2 在 `GLX` 里写死 `glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11)`：只要 Wayland 和 X11
-  两个后端都编进来了、且 `DEBUG_PREFER_WAYLAND` 为假，就强制 X11——会话是 Wayland 也一样，游戏走
-  Xwayland。**Wayland 相关的调查（怎么强制、为什么跑不起来、GLFW 各后端的差异）全部收在
-  [`Wayland.md`](Wayland.md)**，这里只留结论。
-* **其它平台未测试**：Windows / macOS 都没实机跑过。`GLFW_HOVERED`（指针是否在窗口内容区上方）
-  由 GLFW 各后端统一实现，预期一致；Windows 的窗口/DPI 缩放、macOS 的坐标原点和 Retina 缩放都可能让
+* **平台**：Linux 上本轮分别跑了 SDL 的原生 Wayland（逻辑光标/点击）和 X11/Xwayland 两条路径
+  （Wayland 说明见 [`Wayland.md`](Wayland.md)）；原生 Wayland 的物理指针 warp 需要窗口已有 pointer
+  focus，本轮未在“指针从窗口外进入”的条件下验证成功。其它平台仍未验证。
+* **其它平台未测试**：Windows / macOS 都没实机跑过。Wayland 物理指针依赖合成器的
+  pointer-warp 支持；Windows 的窗口/DPI 缩放、macOS 的坐标原点和 Retina 缩放都可能让
   「窗口像素」的含义需要复核。换平台后先自测一遍：
   `GET /ctl/mouse` → `mouse goto <x> <y>` → `GET /ctl/mouse` 读回坐标 → `mouse left` 是否命中。
 

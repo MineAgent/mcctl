@@ -55,7 +55,6 @@ public final class VerifyServer {
 					+ "缩放：162.5 61.5\n"
 					+ "窗口：854x480\n"
 					+ "GUI：427x240\n"
-					+ "抓取：否\n"
 					+ "界面：CraftingScreen\n";
 		}
 

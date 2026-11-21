@@ -15,7 +15,7 @@ import java.util.List;
  * @param holdMs      how long keys/buttons are held down
  * @param delayMs     how long to sleep before performing this action
  * @param dx          horizontal mouse delta in pixels, or the absolute x for {@link Kind#MOUSE_GOTO}
- * @param dy          vertical mouse delta in pixels (positive = down, like GLFW), or the absolute y
+ * @param dy          vertical mouse delta in pixels (positive = down, like the vanilla mouse), or the absolute y
  * @param amount      scroll amount (positive = wheel up)
  */
 public record Action(Kind kind, List<String> keys, String button, String message, long holdMs, long delayMs,

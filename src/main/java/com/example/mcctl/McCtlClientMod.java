@@ -6,7 +6,8 @@ package com.example.mcctl;
 import com.example.httpd.HttpdProvider;
 import net.fabricmc.api.ClientModInitializer;
 
-import java.util.logging.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * Client entrypoint: mounts mcctl's endpoints under {@code /ctl} on MGHttpdProvider's shared server
@@ -16,7 +17,7 @@ import java.util.logging.Logger;
  * lazily on first use, which keeps startup safe.</p>
  */
 public class McCtlClientMod implements ClientModInitializer {
-	public static final Logger LOG = Logger.getLogger("mcctl");
+	public static final Logger LOG = LogManager.getLogger("mcctl");
 
 	private McInputExecutor executor;
 	private CommandRunner runner;

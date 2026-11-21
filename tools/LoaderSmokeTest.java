@@ -9,7 +9,7 @@ import java.nio.charset.StandardCharsets;
 
 /**
  * Smoke test: loads the mod's client entrypoint inside a plain JVM that has the *real* Minecraft
- * 26.2 runtime classpath plus MGHttpdProvider's jar (but no game). Verifies: entrypoint
+ * 26.3 runtime classpath plus MGHttpdProvider's jar (but no game). Verifies: entrypoint
  * instantiation, registration on the shared server, port binding, jdk.httpserver availability,
  * the provider's GET / index, mcctl's GET /ctl/ manual, and the /ctl/prtsc / POST routing.
  */

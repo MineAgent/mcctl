@@ -23,8 +23,10 @@ public interface InputExecutor {
 	 * Moves the mouse cursor to an absolute window-pixel position.
 	 *
 	 * <p>Window pixels are the space {@code GET /mouse} reports and {@code /prtsc} screenshots use.
-	 * It only does something while a screen is open: in the world the cursor is grabbed by the game
-	 * (use {@link #mouseMove} there).</p>
+	 * It only does something while a screen is open: in the world the window backend disables the
+	 * cursor (use {@link #mouseMove} there). This does not depend on whether the window has focus.
+	 * The logical cursor always moves; the physical pointer follows when the window backend is able
+	 * to warp it (on native Wayland that needs compositor support and pointer focus).</p>
 	 */
 	void mouseGoto(int x, int y);
 
@@ -69,7 +71,10 @@ public interface InputExecutor {
 	byte[] captureScreenshot() throws Exception;
 
 	/**
-	 * Current mouse cursor state as plain text (the body of {@code GET /mouse}).
+	 * Current logical cursor state as plain text (the body of {@code GET /mouse}).
+	 *
+	 * <p>The numbers are mcctl's own cursor position, so X11 and Wayland report the same thing
+	 * even when a compositor cannot move the physical pointer.</p>
 	 *
 	 * @return one {@code "<field>：<value>"} line per field; never {@code null}
 	 * @throws IllegalStateException when the game is not running or the client thread did not answer

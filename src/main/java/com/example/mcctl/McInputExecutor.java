@@ -19,7 +19,6 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.input.MouseButtonInfo;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.player.LocalPlayer;
-import org.lwjgl.glfw.GLFW;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
@@ -32,8 +31,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * Turns mcctl actions into real Minecraft input.
@@ -52,7 +51,7 @@ import java.util.logging.Logger;
  * </ul>
  */
 public final class McInputExecutor implements InputExecutor {
-	private static final Logger LOG = Logger.getLogger("mcctl");
+	private static final Logger LOG = LogManager.getLogger("mcctl");
 
 	/** How long the HTTP thread waits for the typing commands to finish on the client thread. */
 	private static final long TYPE_TIMEOUT_MS = 5_000L;
@@ -67,6 +66,9 @@ public final class McInputExecutor implements InputExecutor {
 	/** private MouseHandler#xpos / #ypos - synced after an absolute cursor move. */
 	private static Field cursorX;
 	private static Field cursorY;
+
+	/** mcctl's own cursor position, in window pixels (see {@link CursorTracker}). */
+	private static final CursorTracker CURSOR = new CursorTracker();
 
 	private static Minecraft mc() {
 		return Minecraft.getInstance();
@@ -84,19 +86,31 @@ public final class McInputExecutor implements InputExecutor {
 				minecraft.execute(task);
 			}
 		} catch (RuntimeException e) {
-			LOG.log(Level.FINE, "input dropped (game shutting down?)", e);
+			LOG.debug("input dropped (game shutting down?)", e);
 		}
 	}
 
-	private static MouseButtonEvent mouseEvent(int button) {
+	private static MouseButtonEvent mouseEvent(int mouseCode) {
 		Minecraft minecraft = mc();
 		double x = 0.0;
 		double y = 0.0;
-		if (minecraft != null && minecraft.mouseHandler != null && minecraft.getWindow() != null) {
-			x = minecraft.mouseHandler.getScaledXPos(minecraft.getWindow());
-			y = minecraft.mouseHandler.getScaledYPos(minecraft.getWindow());
+		if (minecraft != null && minecraft.getWindow() != null) {
+			Window window = minecraft.getWindow();
+			x = CURSOR.scaledX(window);
+			y = CURSOR.scaledY(window);
 		}
-		return new MouseButtonEvent(x, y, new MouseButtonInfo(button, 0));
+		return new MouseButtonEvent(x, y, new MouseButtonInfo(mouseCode, 0));
+	}
+
+	/**
+	 * Builds the synthetic key event screens expect.
+	 *
+	 * <p>26.3 splits a {@code KeyEvent} into the scancode ({@code key()}, what {@code KeyMapping}
+	 * matches) and the layout key code ({@code shortcutKey()}, what {@code Screen} and
+	 * {@code EditBox} compare backspace/delete/arrow/tab against); both components are needed.</p>
+	 */
+	private static KeyEvent keyEvent(String canonicalKey) {
+		return new KeyEvent(GameKeys.code(canonicalKey), GameKeys.keycode(canonicalKey), 0);
 	}
 
 	/**
@@ -153,10 +167,9 @@ public final class McInputExecutor implements InputExecutor {
 
 	@Override
 	public void keyDown(String canonicalKey) {
-		int code = Keys.code(canonicalKey);
 		onClientThread(() -> {
 			Minecraft minecraft = mc();
-			InputConstants.Key key = InputConstants.Type.KEYSYM.getOrCreate(code);
+			InputConstants.Key key = GameKeys.key(canonicalKey);
 
 			// Global keys (fullscreen, screenshot, friends) are handled before anything else,
 			// exactly like the vanilla KeyboardHandler does.
@@ -174,11 +187,11 @@ public final class McInputExecutor implements InputExecutor {
 			//   * editing keys (backspace, arrows, enter, ...) and esc -> stay in the chat box.
 			//   * everything else (WASD, space, ...) -> keep controlling the game while typing.
 			if (screen != null && chatFocused(minecraft)) {
-				if (Keys.isChatAction(code)) {
-					screen.keyPressed(new KeyEvent(Keys.ESC, 0, 0));
+				if (Keys.isChatAction(canonicalKey)) {
+					screen.keyPressed(keyEvent(Keys.ESC));
 					screen = minecraft.gui.screen();
-				} else if (Keys.isTextEditing(code) || code == Keys.ESC) {
-					screen.keyPressed(new KeyEvent(code, 0, 0));
+				} else if (Keys.isTextEditing(canonicalKey) || Keys.ESC.equals(canonicalKey)) {
+					screen.keyPressed(keyEvent(canonicalKey));
 					return;
 				} else {
 					screen = null;
@@ -186,10 +199,10 @@ public final class McInputExecutor implements InputExecutor {
 			}
 
 			if (screen != null) {
-				screen.keyPressed(new KeyEvent(code, 0, 0));
+				screen.keyPressed(keyEvent(canonicalKey));
 				return;
 			}
-			if (code == Keys.ESC) {
+			if (Keys.ESC.equals(canonicalKey)) {
 				minecraft.pauseGame(false);
 				return;
 			}
@@ -197,7 +210,7 @@ public final class McInputExecutor implements InputExecutor {
 			KeyMapping.click(key);
 			KeyMapping.set(key, true);
 
-			if (code == Keys.F3) {
+			if (Keys.F3.equals(canonicalKey)) {
 				// F3 alone toggles the debug overlay; that logic lives in KeyboardHandler.
 				minecraft.debugEntries.toggleDebugOverlay();
 			}
@@ -206,21 +219,20 @@ public final class McInputExecutor implements InputExecutor {
 
 	@Override
 	public void keyUp(String canonicalKey) {
-		int code = Keys.code(canonicalKey);
 		onClientThread(() -> {
 			Minecraft minecraft = mc();
-			InputConstants.Key key = InputConstants.Type.KEYSYM.getOrCreate(code);
+			InputConstants.Key key = GameKeys.key(canonicalKey);
 			KeyMapping.set(key, false);
 
 			Screen screen = minecraft.gui.screen();
 			if (screen == null) {
 				return;
 			}
-			if (chatFocused(minecraft) && !Keys.isTextEditing(code) && code != Keys.ESC) {
+			if (chatFocused(minecraft) && !Keys.isTextEditing(canonicalKey) && !Keys.ESC.equals(canonicalKey)) {
 				// The press went to the game (movement keys and friends), so the release must too.
 				return;
 			}
-			screen.keyReleased(new KeyEvent(code, 0, 0));
+			screen.keyReleased(keyEvent(canonicalKey));
 		});
 	}
 
@@ -264,7 +276,7 @@ public final class McInputExecutor implements InputExecutor {
 				return NO_TEXT_BOX;
 			}
 
-			screen.keyPressed(new KeyEvent(Keys.ENTER, 0, 0));
+			screen.keyPressed(keyEvent(Keys.ENTER));
 			return null;
 		}, TYPE_TIMEOUT_MS);
 	}
@@ -276,12 +288,20 @@ public final class McInputExecutor implements InputExecutor {
 		int button = Keys.mouseButton(canonicalButton);
 		onClientThread(() -> {
 			Minecraft minecraft = mc();
+			InputConstants.Key key = GameKeys.mouse(button);
+			int mouseCode = key.getValue();
 			Screen screen = minecraft.gui.screen();
 			if (screen != null && !chatFocused(minecraft)) {
-				screen.mouseClicked(mouseEvent(button), false);
+				CURSOR.update(minecraft);
+				screen.mouseClicked(mouseEvent(mouseCode), false);
 				return;
 			}
-			InputConstants.Key key = InputConstants.Type.MOUSE.getOrCreate(button);
+			// The window usually does not have focus while the game is driven from a terminal, so
+			// the game may not consider the mouse grabbed. Mark the hold so MinecraftMixin can keep
+			// Minecraft#continueAttack running (survival block breaking needs it).
+			if (button == 0) {
+				SyntheticInput.setAttackHeld(true);
+			}
 			KeyMapping.click(key);
 			KeyMapping.set(key, true);
 		});
@@ -292,12 +312,18 @@ public final class McInputExecutor implements InputExecutor {
 		int button = Keys.mouseButton(canonicalButton);
 		onClientThread(() -> {
 			Minecraft minecraft = mc();
-			InputConstants.Key key = InputConstants.Type.MOUSE.getOrCreate(button);
+			InputConstants.Key key = GameKeys.mouse(button);
+			int mouseCode = key.getValue();
+			if (button == 0) {
+				// Cleared even when the release is forwarded to a screen: the hold is over either way.
+				SyntheticInput.setAttackHeld(false);
+			}
 			KeyMapping.set(key, false);
 
 			Screen screen = minecraft.gui.screen();
 			if (screen != null && !chatFocused(minecraft)) {
-				screen.mouseReleased(mouseEvent(button));
+				CURSOR.update(minecraft);
+				screen.mouseReleased(mouseEvent(mouseCode));
 			}
 		});
 	}
@@ -310,18 +336,21 @@ public final class McInputExecutor implements InputExecutor {
 			Minecraft minecraft = mc();
 			Screen screen = minecraft.gui.screen();
 
-			if (screen != null && !chatFocused(minecraft) && minecraft.mouseHandler != null
-					&& !minecraft.mouseHandler.isMouseGrabbed()) {
-				// GUI: move the real cursor and keep the tracked position in step. GLFW only feeds
-				// the new position back through the cursor callback on the next glfwPollEvents - and
+			if (screen != null && !chatFocused(minecraft) && minecraft.getWindow() != null
+					&& minecraft.mouseHandler != null && !minecraft.mouseHandler.isMouseGrabbed()) {
+				// GUI: move the logical cursor and keep the game's tracked position in step. The
+				// window backend only reports a warped position back on the next event poll - and
 				// under Xwayland a warp often produces no callback at all - so without the sync the
 				// deltas would not accumulate and a following click would use the old spot.
 				Window window = minecraft.getWindow();
 				MouseHandler mouse = minecraft.mouseHandler;
-				int px = clamp((int) Math.round(mouse.xpos()) + dx, 0, Math.max(window.getScreenWidth() - 1, 0));
-				int py = clamp((int) Math.round(mouse.ypos()) + dy, 0, Math.max(window.getScreenHeight() - 1, 0));
-				GLFW.glfwSetCursorPos(window.handle(), px, py);
+				CURSOR.update(minecraft);
+				int px = clamp((int) Math.round(CURSOR.x()) + dx, 0, Math.max(window.getScreenWidth() - 1, 0));
+				int py = clamp((int) Math.round(CURSOR.y()) + dy, 0, Math.max(window.getScreenHeight() - 1, 0));
+				CURSOR.set(window, px, py);
+				WindowCompat.warpCursor(window, px, py);
 				syncCursorPos(mouse, px, py);
+				CURSOR.dispatchMouseMoved(screen, window);
 				return;
 			}
 
@@ -352,9 +381,11 @@ public final class McInputExecutor implements InputExecutor {
 	 * Puts the cursor at an absolute window-pixel position (the space {@code GET /mouse} reports and
 	 * the screenshots use).
 	 *
-	 * <p>Doing nothing while the mouse is grabbed is deliberate: in the world GLFW disables the
-	 * cursor and parks it at the window centre, so there is no free cursor to move (turn the view
-	 * with {@code mouse move} instead).</p>
+	 * <p>Doing nothing while no screen is open is deliberate: in the world the window backend
+	 * disables the cursor and parks it at the window centre, so there is no free cursor to move
+	 * (turn the view with {@code mouse move} instead). This is decided by the open screen, not by
+	 * the game's grabbed state, because that state also goes false when the window loses focus -
+	 * the world would otherwise behave differently depending on focus.</p>
 	 */
 	@Override
 	public void mouseGoto(int x, int y) {
@@ -364,19 +395,22 @@ public final class McInputExecutor implements InputExecutor {
 				return;
 			}
 			MouseHandler mouse = minecraft.mouseHandler;
-			if (mouse.isMouseGrabbed()) {
-				LOG.fine("mouse goto ignored: no screen open, the cursor is grabbed");
+			if (minecraft.gui.screen() == null) {
+				LOG.debug("mouse goto ignored: no screen open, the world has no free cursor");
 				return;
 			}
 
 			Window window = minecraft.getWindow();
 			int px = clamp(x, 0, Math.max(window.getScreenWidth() - 1, 0));
 			int py = clamp(y, 0, Math.max(window.getScreenHeight() - 1, 0));
-			GLFW.glfwSetCursorPos(window.handle(), px, py);
-			// GLFW only reports the new position back through the cursor callback, which runs on the
-			// next glfwPollEvents, so a click in the same request would still use the old spot.
-			// Mirror MouseHandler#releaseMouse (it patches xpos/ypos right after glfwSetCursorPos).
+			CURSOR.update(minecraft);
+			CURSOR.set(window, px, py);
+			WindowCompat.warpCursor(window, px, py);
+			// The backend only reports the new position back through the cursor callback, which
+			// runs on the next event poll, so a click in the same request would still use the old
+			// spot. Mirror MouseHandler#releaseMouse (it patches xpos/ypos right after the warp).
 			syncCursorPos(mouse, px, py);
+			CURSOR.dispatchMouseMoved(minecraft.gui.screen(), window);
 		});
 	}
 
@@ -425,29 +459,15 @@ public final class McInputExecutor implements InputExecutor {
 		}
 
 		Screen screen = minecraft.gui.screen();
-		boolean grabbed = mouse.isMouseGrabbed();
+		CURSOR.update(minecraft);
 
-		// GLFW only delivers cursor motion while the pointer is over the content area, so once it
-		// wanders off the window MouseHandler#xpos/ypos freezes at the last in-window pixel and
-		// looks like a perfectly valid position. GLFW_HOVERED is the portable answer to "is the
-		// cursor over this window" (X11 Enter/Leave, Wayland wl_pointer, Win32, Cocoa), so no
-		// platform check is needed; glfwGetCursorPos would not do (X11 reports out-of-window
-		// coordinates, Wayland cannot know them at all).
-		boolean hovered = GLFW.glfwGetWindowAttrib(window.handle(), GLFW.GLFW_HOVERED) == GLFW.GLFW_TRUE;
-
-		StringBuilder out = new StringBuilder();
-		if (!grabbed && !hovered) {
-			out.append("光标：不在窗口内，请使用 mouse goto <x> <y>\n");
-		} else {
-			out.append("光标：").append(decimal(mouse.xpos())).append(' ').append(decimal(mouse.ypos())).append('\n')
-					.append("缩放：").append(decimal(mouse.getScaledXPos(window))).append(' ')
-					.append(decimal(mouse.getScaledYPos(window))).append('\n');
-		}
-		return out
+		return new StringBuilder()
+				.append("光标：").append(decimal(CURSOR.x())).append(' ').append(decimal(CURSOR.y())).append('\n')
+				.append("缩放：").append(decimal(CURSOR.scaledX(window))).append(' ')
+				.append(decimal(CURSOR.scaledY(window))).append('\n')
 				.append("窗口：").append(window.getScreenWidth()).append('x').append(window.getScreenHeight()).append('\n')
 				.append("GUI：").append(window.getGuiScaledWidth()).append('x')
 				.append(window.getGuiScaledHeight()).append('\n')
-				.append("抓取：").append(grabbed ? "是" : "否").append('\n')
 				.append("界面：").append(screen == null ? "无" : screen.getClass().getSimpleName()).append('\n')
 				.toString();
 	}
@@ -471,9 +491,9 @@ public final class McInputExecutor implements InputExecutor {
 			cursorX.setDouble(mouse, x);
 			cursorY.setDouble(mouse, y);
 		} catch (ReflectiveOperationException | RuntimeException e) {
-			// Not fatal: the real cursor still moved, only a click in the same request might use the
-			// previous position (put a small delay in front of the click then).
-			LOG.log(Level.FINE, "could not sync the tracked cursor position", e);
+			// Not fatal: the logical cursor still moved, so mcctl's own reads and synthetic events
+			// are correct; only the game's internal hover state may lag behind.
+			LOG.debug("could not sync the tracked cursor position", e);
 		}
 	}
 
@@ -482,9 +502,10 @@ public final class McInputExecutor implements InputExecutor {
 		onClientThread(() -> {
 			Minecraft minecraft = mc();
 			Screen screen = minecraft.gui.screen();
-			if (screen != null && !chatFocused(minecraft)) {
-				screen.mouseScrolled(minecraft.mouseHandler.getScaledXPos(minecraft.getWindow()),
-						minecraft.mouseHandler.getScaledYPos(minecraft.getWindow()), 0.0, amount);
+			if (screen != null && !chatFocused(minecraft) && minecraft.getWindow() != null) {
+				CURSOR.update(minecraft);
+				Window window = minecraft.getWindow();
+				screen.mouseScrolled(CURSOR.scaledX(window), CURSOR.scaledY(window), 0.0, amount);
 				return;
 			}
 			try {
@@ -495,7 +516,7 @@ public final class McInputExecutor implements InputExecutor {
 				}
 				onScroll.invoke(minecraft.mouseHandler, minecraft.getWindow().handle(), 0.0, amount);
 			} catch (ReflectiveOperationException | RuntimeException e) {
-				LOG.log(Level.FINE, "mouse wheel is unavailable in this Minecraft build", e);
+				LOG.debug("mouse wheel is unavailable in this Minecraft build", e);
 			}
 		});
 	}
@@ -509,7 +530,7 @@ public final class McInputExecutor implements InputExecutor {
 			Minecraft minecraft = mc();
 			ClientPacketListener connection = minecraft.getConnection();
 			if (connection == null) {
-				LOG.warning("cannot send chat message, not in a world: " + message);
+				LOG.warn("cannot send chat message, not in a world: " + message);
 				return;
 			}
 			if (message.startsWith("/")) {
@@ -578,6 +599,7 @@ public final class McInputExecutor implements InputExecutor {
 	@Override
 	public void releaseAll() {
 		onClientThread(() -> {
+			SyntheticInput.setAttackHeld(false);
 			KeyMapping.releaseAll();
 			Minecraft minecraft = mc();
 			if (minecraft != null && minecraft.options != null) {

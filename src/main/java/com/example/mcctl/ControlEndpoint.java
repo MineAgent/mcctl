@@ -13,8 +13,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * mcctl's endpoints, mounted under the shared server's {@code /ctl} prefix.
@@ -40,7 +40,7 @@ public final class ControlEndpoint implements PathHandler {
 			new HttpdProvider.Endpoint("GET", "/ctl/prtsc", "当前帧 PNG (别名 /ctl/screenshot)"),
 			new HttpdProvider.Endpoint("GET", "/ctl/mouse", "当前光标位置 (窗口像素 + GUI 缩放)"));
 
-	private static final Logger LOG = Logger.getLogger("mcctl");
+	private static final Logger LOG = LogManager.getLogger("mcctl");
 	private static final int MAX_BODY_BYTES = 64 * 1024;
 
 	private final CommandRunner runner;
@@ -92,7 +92,7 @@ public final class ControlEndpoint implements PathHandler {
 		} catch (BodyTooLargeException e) {
 			respond(exchange, 413, "text/plain; charset=utf-8", "request body too large\n");
 		} catch (Exception e) {
-			LOG.log(Level.WARNING, "request failed", e);
+			LOG.warn("request failed", e);
 			respond(exchange, 500, "text/plain; charset=utf-8", "internal error: " + e + "\n");
 		}
 		// the provider closes the exchange
@@ -119,7 +119,7 @@ public final class ControlEndpoint implements PathHandler {
 		try {
 			mouse = executor.mousePosition();
 		} catch (RuntimeException e) {
-			LOG.log(Level.WARNING, "mouse position failed", e);
+			LOG.warn("mouse position failed", e);
 			respond(exchange, 500, "text/plain; charset=utf-8", "mouse position failed: " + e + "\n");
 			return;
 		}
@@ -139,7 +139,7 @@ public final class ControlEndpoint implements PathHandler {
 		try {
 			png = executor.captureScreenshot();
 		} catch (Exception e) {
-			LOG.log(Level.WARNING, "screenshot failed", e);
+			LOG.warn("screenshot failed", e);
 			respond(exchange, 500, "text/plain; charset=utf-8", "screenshot failed: " + e + "\n");
 			return;
 		}
